@@ -169,7 +169,8 @@ python -m compileall auv_intel_digest tests
 
 当前新增能力：
 
-- 新增 `python -m auv_intel_digest scheduled-digest` 命令。
+- 新增 `python -m auv_intel_digest collect` 命令。
+- 保留 `python -m auv_intel_digest scheduled-digest` 作为兼容别名。
 - 支持从 JSON 配置读取多个 RSS/Atom sources。
 - 支持 RSS 2.0 和 Atom 基本字段解析：
   - title
@@ -206,3 +207,47 @@ python -m compileall auv_intel_digest tests
 - 不做自动推送；
 - 不引入 Web UI 或数据库；
 - pytest 使用 mock 网络或本地 fixture，不依赖真实互联网。
+
+## 9. v0.4.0 中文情报摘要 MVP 更新
+
+当前新增能力：
+
+- `collect` 增加参数：
+  - `--language zh|en`
+  - `--summarizer noop|openai`
+  - `--llm-model`
+- `--language zh` 输出中文 Markdown 模板：
+  - 运行摘要
+  - 重点情报
+  - 来源、发布时间、链接、原始标题
+  - 中文摘要、关键信息、风险、机会、建议跟进
+  - 采集错误
+- 新增 summarizer 抽象层：
+  - `noop`：默认，不调用外部 API，保留原文并标记未启用 LLM 中文摘要
+  - `fake`：测试用 deterministic summarizer
+  - `openai`：可选 OpenAI summarizer
+- OpenAI summarizer 约束：
+  - API key 从 `OPENAI_API_KEY` 读取
+  - 模型从 `AUV_INTEL_LLM_MODEL` 或 `--llm-model` 读取
+  - 缺 key 时回退 `noop`
+  - 单条失败不阻断 digest
+
+示例命令：
+
+```powershell
+.\.venv\Scripts\python.exe -m auv_intel_digest collect --sources examples\sources.example.json --output digests\latest.zh.md --limit 30 --language zh
+```
+
+可选 LLM：
+
+```powershell
+$env:OPENAI_API_KEY="your_api_key"
+$env:AUV_INTEL_LLM_MODEL="your_model_name"
+.\.venv\Scripts\python.exe -m auv_intel_digest collect --sources examples\sources.example.json --output digests\latest.zh.md --limit 30 --language zh --summarizer openai
+```
+
+测试要求：
+
+- 不依赖真实网络；
+- 不依赖真实 LLM API；
+- OpenAI 相关测试使用 mock response 或缺 key fallback。

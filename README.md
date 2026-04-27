@@ -278,20 +278,22 @@ examples/sources.example.json
 运行一次采集并生成 Markdown digest：
 
 ```powershell
-python -m auv_intel_digest scheduled-digest --sources examples/sources.example.json --output digests/latest.md --limit 30
+python -m auv_intel_digest collect --sources examples/sources.example.json --output digests/latest.md --limit 30
 ```
 
 调试时包含已经见过的条目：
 
 ```powershell
-python -m auv_intel_digest scheduled-digest --sources examples/sources.example.json --output digests/latest.md --include-seen
+python -m auv_intel_digest collect --sources examples/sources.example.json --output digests/latest.md --include-seen
 ```
 
 指定 state 文件：
 
 ```powershell
-python -m auv_intel_digest scheduled-digest --sources examples/sources.example.json --output digests/latest.md --state .auv_intel_digest/state.json
+python -m auv_intel_digest collect --sources examples/sources.example.json --output digests/latest.md --state .auv_intel_digest/state.json
 ```
+
+`scheduled-digest` 是兼容别名，推荐日常使用 `collect`。
 
 默认 state 路径为：
 
@@ -305,7 +307,7 @@ Windows Task Scheduler 示例：
 
 ```powershell
 cd C:\path\to\auv_intel_digest
-.\.venv\Scripts\python.exe -m auv_intel_digest scheduled-digest --sources examples\sources.example.json --output digests\latest.md --limit 30
+.\.venv\Scripts\python.exe -m auv_intel_digest collect --sources examples\sources.example.json --output digests\latest.md --limit 30
 ```
 
 建议设置：
@@ -321,3 +323,40 @@ cd C:\path\to\auv_intel_digest
 - 不做 LLM 深度总结；
 - 不做自动推送；
 - pytest 不依赖真实互联网，网络测试使用 mock。
+
+## v0.4.0 中文情报摘要
+
+`collect` 支持中文 Markdown 模板：
+
+```powershell
+.\.venv\Scripts\python.exe -m auv_intel_digest collect --sources examples\sources.example.json --output digests\latest.zh.md --limit 30 --language zh
+```
+
+默认 summarizer 是 `noop`：
+
+- 不调用外部 API；
+- 不翻译；
+- 保留原始英文标题、链接和摘要；
+- 在中文摘要字段中标记“未启用 LLM 中文摘要”。
+
+可选 OpenAI summarizer：
+
+```powershell
+$env:OPENAI_API_KEY="your_api_key"
+$env:AUV_INTEL_LLM_MODEL="your_model_name"
+
+.\.venv\Scripts\python.exe -m auv_intel_digest collect --sources examples\sources.example.json --output digests\latest.zh.md --limit 30 --language zh --summarizer openai
+```
+
+也可以通过 CLI 指定模型：
+
+```powershell
+.\.venv\Scripts\python.exe -m auv_intel_digest collect --sources examples\sources.example.json --output digests\latest.zh.md --limit 30 --language zh --summarizer openai --llm-model your_model_name
+```
+
+约束：
+
+- `OPENAI_API_KEY` 只能来自环境变量，不要写入代码或提交到仓库；
+- API key 缺失时会自动回退到 `noop`；
+- 单条摘要失败不会中断整份 digest；
+- 测试使用 fake/mock summarizer，不调用真实 LLM API。

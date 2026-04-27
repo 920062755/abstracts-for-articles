@@ -11,6 +11,7 @@ from xml.etree import ElementTree as ET
 
 import httpx
 
+from auv_intel_digest.summarizers import SummaryResult, build_summarizer
 from auv_intel_digest.sources.base import clean_text
 
 
@@ -54,6 +55,10 @@ class ScheduledDigestResult:
     output_path: Path
     items: list[FeedItem]
     source_results: list[FeedSourceResult]
+    language: str = "en"
+    summarizer_name: str = "noop"
+    summaries: dict[str, SummaryResult] = field(default_factory=dict)
+    summary_warnings: list[str] = field(default_factory=list)
 
 
 def load_feed_sources(path: str | Path) -> list[FeedSource]:
@@ -146,6 +151,12 @@ def mark_seen(items: list[FeedItem], state: dict[str, Any], generated_at: str) -
 
 
 def render_scheduled_digest(result: ScheduledDigestResult) -> str:
+    if result.language == "zh":
+        return _render_scheduled_digest_zh(result)
+    return _render_scheduled_digest_en(result)
+
+
+def _render_scheduled_digest_en(result: ScheduledDigestResult) -> str:
     lines = [
         "# AUV Intel Digest",
         "",
@@ -188,6 +199,60 @@ def render_scheduled_digest(result: ScheduledDigestResult) -> str:
     return "\n".join(lines).rstrip() + "\n"
 
 
+def _render_scheduled_digest_zh(result: ScheduledDigestResult) -> str:
+    lines = [
+        "# AUV 情报摘要",
+        "",
+        f"生成时间：{result.generated_at}",
+        "",
+        "## 运行摘要",
+        "",
+        f"- 检查资讯源：{result.sources_checked}",
+        f"- 成功：{result.successful}",
+        f"- 失败：{result.failed}",
+        f"- 新条目：{result.new_items}",
+        f"- 输出上限：{result.output_limit}",
+        f"- 摘要器：{result.summarizer_name}",
+        "",
+    ]
+    if result.summary_warnings:
+        lines.extend(["摘要提示：", ""])
+        for warning in result.summary_warnings:
+            lines.append(f"- {warning}")
+        lines.append("")
+
+    lines.extend(["## 重点情报", ""])
+    if not result.items:
+        lines.extend(["今日暂无新条目。", ""])
+    for idx, item in enumerate(result.items, start=1):
+        summary = result.summaries.get(item.item_id)
+        title = summary.zh_title if summary and summary.zh_title else item.title
+        lines.extend(
+            [
+                f"### {idx}. {title}",
+                "",
+                f"- 来源：{item.source}",
+                f"- 发布时间：{item.published or '未知'}",
+                f"- 链接：{item.link or 'N/A'}",
+                f"- 原始标题：{item.title}",
+                f"- 中文摘要：{summary.zh_summary if summary else '未启用 LLM 中文摘要，以下为原始摘要。 ' + (item.summary or '原始条目未提供摘要。')}",
+                f"- 关键信息：{_join_zh_list(summary.key_points if summary else [])}",
+                f"- 风险：{_join_zh_list(summary.risks if summary else [])}",
+                f"- 机会：{_join_zh_list(summary.opportunities if summary else [])}",
+                f"- 建议跟进：{_join_zh_list(summary.follow_ups if summary else [])}",
+                "",
+            ]
+        )
+
+    errors = [source for source in result.source_results if source.status != "ok"]
+    lines.extend(["## 采集错误", ""])
+    if not errors:
+        lines.extend(["无。", ""])
+    for error in errors:
+        lines.append(f"- {error.source.name}: {error.error or '未知错误'}")
+    return "\n".join(lines).rstrip() + "\n"
+
+
 def write_scheduled_digest(path: str | Path, markdown: str) -> None:
     output_path = Path(path)
     output_path.parent.mkdir(parents=True, exist_ok=True)
@@ -201,6 +266,10 @@ def run_scheduled_digest(
     limit: int,
     include_seen: bool = False,
     state_path: str | Path = ".auv_intel_digest/state.json",
+    language: str = "en",
+    summarizer_name: str = "noop",
+    llm_model: str | None = None,
+    summarizer=None,
     http_client: httpx.Client | None = None,
 ) -> ScheduledDigestResult:
     generated_at = datetime.now().isoformat(timespec="minutes")
@@ -214,6 +283,16 @@ def run_scheduled_digest(
 
     selected = all_items if include_seen else [item for item in all_items if not item.seen]
     selected = sorted(selected, key=lambda item: item.published or "", reverse=True)[:limit]
+    selected_summarizer = summarizer or build_summarizer(summarizer_name, llm_model=llm_model)
+    summaries: dict[str, SummaryResult] = {}
+    summary_warnings = list(getattr(selected_summarizer, "warnings", []))
+    if language == "zh":
+        for item in selected:
+            summary = selected_summarizer.summarize_item(item)
+            summaries[item.item_id] = summary
+            if summary.warning:
+                summary_warnings.append(summary.warning)
+
     result = ScheduledDigestResult(
         generated_at=generated_at,
         sources_checked=len(enabled_sources),
@@ -224,6 +303,10 @@ def run_scheduled_digest(
         output_path=Path(output_path),
         items=selected,
         source_results=source_results,
+        language=language,
+        summarizer_name=getattr(selected_summarizer, "name", summarizer_name),
+        summaries=summaries,
+        summary_warnings=list(dict.fromkeys(summary_warnings)),
     )
     write_scheduled_digest(output_path, render_scheduled_digest(result))
     return result
@@ -307,3 +390,7 @@ def _normalize_date(value: str | None) -> str | None:
     except (TypeError, ValueError):
         return value
     return parsed.isoformat()
+
+
+def _join_zh_list(values: list[str]) -> str:
+    return "；".join(values) if values else "未启用 LLM 中文摘要，需人工判断。"

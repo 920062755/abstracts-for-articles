@@ -16,6 +16,7 @@ from auv_intel_digest.scheduled_digest import (
     run_scheduled_digest,
     write_state,
 )
+from auv_intel_digest.summarizers.fake import FakeSummarizer
 
 
 RSS_FIXTURE = """<?xml version="1.0"?>
@@ -144,6 +145,42 @@ def test_markdown_digest_contains_summary_items_and_errors():
     assert "- Broken: boom" in markdown
 
 
+def test_chinese_markdown_digest_uses_summary_fields():
+    source = FeedSource("RSS Test", "https://feed.test")
+    item = FeedItem(
+        item_id="id",
+        title="Multi-AUV field test",
+        link="https://example.test/rss/1",
+        source="RSS Test",
+        published="2026-04-27T08:00:00+08:00",
+        summary="Summary",
+        category="robotics",
+    )
+    result = ScheduledDigestResult(
+        generated_at="2026-04-27T08:00",
+        sources_checked=1,
+        successful=1,
+        failed=0,
+        new_items=1,
+        output_limit=30,
+        output_path=Path("digests/latest.zh.md"),
+        items=[item],
+        source_results=[type("Result", (), {"source": source, "status": "ok", "items": [], "error": None})()],
+        language="zh",
+        summarizer_name="fake",
+        summaries={item.item_id: FakeSummarizer().summarize_item(item)},
+    )
+
+    markdown = render_scheduled_digest(result)
+
+    assert "# AUV 情报摘要" in markdown
+    assert "## 运行摘要" in markdown
+    assert "## 重点情报" in markdown
+    assert "- 原始标题：Multi-AUV field test" in markdown
+    assert "- 中文摘要：这是用于测试的中文摘要：Summary" in markdown
+    assert "## 采集错误" in markdown
+
+
 def test_run_scheduled_digest_uses_mock_network_and_filters_seen_items():
     sources_path = Path("tests/.tmp/sources.json")
     output_path = Path("tests/.tmp/latest.md")
@@ -179,6 +216,37 @@ def test_run_scheduled_digest_uses_mock_network_and_filters_seen_items():
     assert second.new_items == 0
     assert len(second.items) == 0
     assert output_path.exists()
+
+
+def test_run_scheduled_digest_zh_with_fake_summarizer():
+    sources_path = Path("tests/.tmp/sources_zh.json")
+    output_path = Path("tests/.tmp/latest.zh.md")
+    state_path = Path("tests/.tmp/run_state_zh.json")
+    for path in (sources_path, output_path, state_path):
+        if path.exists():
+            path.unlink()
+    sources_path.write_text(
+        json.dumps({"sources": [{"name": "RSS Test", "url": "https://feed.test/rss"}]}),
+        encoding="utf-8",
+    )
+    client = httpx.Client(
+        transport=httpx.MockTransport(lambda request: httpx.Response(200, text=RSS_FIXTURE))
+    )
+
+    result = run_scheduled_digest(
+        sources_path=sources_path,
+        output_path=output_path,
+        limit=10,
+        state_path=state_path,
+        language="zh",
+        summarizer_name="fake",
+        http_client=client,
+    )
+
+    markdown = output_path.read_text(encoding="utf-8")
+    assert result.language == "zh"
+    assert result.summarizer_name == "fake"
+    assert "中文整理：Multi-AUV field test" in markdown
 
 
 def test_scheduled_digest_cli_smoke(monkeypatch):
@@ -226,6 +294,8 @@ def test_collect_cli_alias_smoke(monkeypatch):
             output_path=kwargs["output_path"],
             items=[],
             source_results=[],
+            language=kwargs["language"],
+            summarizer_name=kwargs["summarizer_name"],
         )
 
     monkeypatch.setattr("auv_intel_digest.cli.run_scheduled_digest", fake_run_scheduled_digest)
@@ -242,8 +312,13 @@ def test_collect_cli_alias_smoke(monkeypatch):
             "--state",
             "tests/.tmp/collect-state.json",
             "--include-seen",
+            "--language",
+            "zh",
+            "--summarizer",
+            "noop",
         ],
     )
 
     assert result.exit_code == 0
     assert "Sources checked: 1" in result.output
+    assert "Language: zh" in result.output
