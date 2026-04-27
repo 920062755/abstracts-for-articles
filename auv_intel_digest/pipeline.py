@@ -12,6 +12,7 @@ from auv_intel_digest.models import DailyDigest
 from auv_intel_digest.notifiers.composite import CompositeNotifier
 from auv_intel_digest.notifiers.file_only import FileOnlyNotifier
 from auv_intel_digest.notifiers.qq_onebot import QQOneBotNotifier
+from auv_intel_digest.notifiers.telegram import TelegramNotifier
 from auv_intel_digest.reports.json_writer import write_json
 from auv_intel_digest.reports.markdown import daily_report_paths, render_html, render_markdown, write_markdown
 from auv_intel_digest.settings import Settings
@@ -43,6 +44,15 @@ def build_notifier(settings: Settings, digest: DailyDigest) -> CompositeNotifier
                 push_max_chars=settings.qq_push_max_chars,
                 digest=digest,
                 max_items_per_topic=settings.max_items_per_topic,
+            )
+        )
+    if "telegram" in modes:
+        notifiers.append(
+            TelegramNotifier(
+                bot_token=settings.telegram_bot_token,
+                chat_id=settings.telegram_chat_id,
+                parse_mode=settings.telegram_parse_mode,
+                max_chars=settings.telegram_max_chars,
             )
         )
     return CompositeNotifier(notifiers, strict=settings.strict_notify)

@@ -360,3 +360,123 @@ $env:AUV_INTEL_LLM_MODEL="your_model_name"
 - API key 缺失时会自动回退到 `noop`；
 - 单条摘要失败不会中断整份 digest；
 - 测试使用 fake/mock summarizer，不调用真实 LLM API。
+
+## v0.4.1 采集失败诊断
+
+当所有 RSS/Atom 源都采集失败时，中文 digest 不再显示“今日暂无新条目”，而是显示：
+
+```text
+本次未生成有效情报摘要，因为所有资讯源采集失败。请先检查网络、代理、防火墙、RSS URL 或运行环境权限。
+```
+
+采集错误区会为常见失败补充诊断提示，例如：
+
+- 运行环境拒绝建立网络连接；
+- 网络请求超时；
+- DNS 解析失败；
+- RSS URL 返回 404；
+- 响应内容不是有效 RSS/Atom XML。
+
+如果任务计划程序需要在所有 source 都失败时返回非 0 退出码，可使用：
+
+```powershell
+.\.venv\Scripts\python.exe -m auv_intel_digest collect --sources examples\sources.example.json --output digests\latest.zh.md --limit 30 --language zh --fail-on-all-source-errors
+```
+
+该模式下仍会写出 Markdown digest，便于查看错误；但当所有启用的 source 都失败时，进程退出码为 `2`。未传该参数时保持兼容行为：写出错误 digest，退出码仍为 `0`。
+
+注意：所有 source 失败时，无论是否传 `--fail-on-all-source-errors`，都不会更新 `.auv_intel_digest/state.json`，也不会把任何 item 标记为 seen。该参数只用于让定时任务、CI 或监控系统感知失败退出码。
+
+逐个诊断 RSS/Atom sources：
+
+```powershell
+.\.venv\Scripts\python.exe -m auv_intel_digest check-sources --sources examples\sources.example.json --timeout 20
+```
+
+该命令会输出每个 source 的 name、url、enabled、category、HTTP status、content-type、下载字节数、是否可解析为 RSS/Atom、item 数量、错误类型、错误消息和诊断说明。单个 source 失败不会影响其他 source，最后会输出 checked / successful / failed 总计。命令不会打印 API key、token 或 webhook secret。
+
+状态语义：
+
+- 所有 source 失败：没有任何启用 source 成功下载并解析 RSS/Atom，因此无法判断今天是否真的没有新资讯。digest 会显示“本次未生成有效情报摘要”，采集错误区会列出失败原因，state 不更新。
+- 无新增：至少有 source 成功采集并解析，但当前运行没有发现未见过的新条目。digest 可以显示“今日暂无新条目”，这是一次有效采集结果。
+- 部分成功：至少一个 source 成功，同时至少一个 source 失败。digest 会输出成功源中的条目，并在采集错误区保留失败源诊断。
+
+本地网络诊断命令示例：
+
+```powershell
+.\.venv\Scripts\python.exe -m auv_intel_digest check-sources --sources examples\sources.example.json --timeout 20
+Resolve-DnsName rss.arxiv.org
+Test-NetConnection rss.arxiv.org -Port 443
+curl.exe -I https://rss.arxiv.org/rss/cs.RO
+Invoke-WebRequest -Uri https://rss.arxiv.org/rss/cs.RO -UseBasicParsing -TimeoutSec 20
+netsh winhttp show proxy
+```
+
+如果出现 `[WinError 10013]`、`socket_permission_denied` 或 permission denied，通常表示当前 Windows 运行环境不允许 Python 建立该网络连接。常见原因包括 Windows 防火墙、杀毒软件、代理、沙箱网络限制或系统权限策略。
+
+GitHub Actions 运行在云端 Linux runner，可能绕过本地 Windows 防火墙、杀毒软件或沙箱网络限制；但云端也可能遇到 DNS、HTTP、RSS 格式、rate limit 或目标站点屏蔽问题。程序仍应正确报告 source 成功/失败、错误类型和诊断说明。GitHub Actions 更适合 `file_only` 或公网 webhook，不适合依赖本地 OneBot 服务的 QQ 推送。
+
+## v0.5.0 GitHub Actions + Telegram
+
+本阶段新增云端定时运行 MVP：
+
+- GitHub Actions 每天 UTC 00:00 运行，对应北京时间 08:00；
+- 生成中文 digest：`digests/latest.zh.md`；
+- 上传 digest artifact；
+- 可选使用 OpenAI 生成中文摘要；
+- 可选通过 Telegram Bot 推送 digest；
+- 不依赖本地 Windows 电脑开机。
+
+workflow 文件：
+
+```text
+.github/workflows/daily-digest.yml
+```
+
+GitHub 仓库需要配置 Secrets：
+
+```text
+TELEGRAM_BOT_TOKEN
+TELEGRAM_CHAT_ID
+OPENAI_API_KEY              # 可选，仅 --summarizer openai 时需要
+```
+
+可选配置 GitHub Variables：
+
+```text
+DIGEST_SUMMARIZER=noop      # 可改为 openai
+AUV_INTEL_LLM_MODEL=gpt-4o-mini
+TELEGRAM_MAX_CHARS=3800
+```
+
+本地测试 Telegram 发送：
+
+```powershell
+$env:TELEGRAM_BOT_TOKEN="your_bot_token"
+$env:TELEGRAM_CHAT_ID="your_chat_id"
+
+.\.venv\Scripts\python.exe -m auv_intel_digest send-telegram --markdown digests\latest.zh.md --title "AUV 情报摘要"
+```
+
+只生成中文 digest，不发送：
+
+```powershell
+.\.venv\Scripts\python.exe -m auv_intel_digest collect --sources examples\sources.example.json --output digests\latest.zh.md --limit 30 --language zh
+```
+
+启用 OpenAI 摘要：
+
+```powershell
+$env:OPENAI_API_KEY="your_api_key"
+$env:AUV_INTEL_LLM_MODEL="gpt-4o-mini"
+
+.\.venv\Scripts\python.exe -m auv_intel_digest collect --sources examples\sources.example.json --output digests\latest.zh.md --limit 30 --language zh --summarizer openai
+```
+
+说明：
+
+- Telegram token 和 chat id 只从环境变量或 GitHub Actions Secrets 读取，不写入代码。
+- workflow 先生成 digest，再上传 artifact，再发送 Telegram；即使所有 source 失败，也会上传错误 digest 并尝试推送诊断内容。
+- workflow 最后会根据 `collect --fail-on-all-source-errors` 的退出码决定是否标红失败；这样 artifact 和 Telegram 仍有机会保留错误信息。
+- Telegram 推送目前使用 `sendMessage`，按 `TELEGRAM_MAX_CHARS` 分段，不做文件上传。
+- Notion、Email、WeCom/微信替代渠道本阶段不实现，只保留后续扩展空间。

@@ -251,3 +251,137 @@ $env:AUV_INTEL_LLM_MODEL="your_model_name"
 - 不依赖真实网络；
 - 不依赖真实 LLM API；
 - OpenAI 相关测试使用 mock response 或缺 key fallback。
+
+## 10. v0.4.1 collector diagnostics and failure guard
+
+当前修正：
+
+- 当 `sources_checked > 0` 且 `successful == 0` 且 `failed > 0` 时，digest 不再写“今日暂无新条目”。
+- 中文 digest 改为提示：
+
+```text
+本次未生成有效情报摘要，因为所有资讯源采集失败。请先检查网络、代理、防火墙、RSS URL 或运行环境权限。
+```
+
+- source error 增加 `diagnostic` 字段。
+- 采集错误区会输出诊断提示。
+- 增加常见错误分类：
+  - Windows socket 权限 / 防火墙 / 沙箱网络权限；
+  - timeout；
+  - DNS 解析失败；
+  - 404；
+  - 非 RSS/Atom XML。
+- 修复 `scheduled_digest` 与 `sources` 包之间的循环导入风险。
+
+测试新增覆盖：
+
+- 所有 source 失败时不显示“今日暂无新条目”；
+- 所有 source 失败时显示 failure guard 文案；
+- source diagnostics 出现在 Markdown 中。
+
+追加行为：
+
+- `collect` / `scheduled-digest` 支持 `--fail-on-all-source-errors`。
+- 传入该参数且所有启用 source 都失败时：
+  - 仍写出 Markdown digest；
+  - 终端 summary 输出 `All sources failed: true`；
+  - 进程退出码为 `2`；
+  - 不更新 state 文件；
+  - 不把任何 item 标记为 seen。
+- 未传该参数时保持兼容：写出错误 digest，退出码仍为 `0`。
+- 所有 source 失败时，无论是否传入该参数，都不更新 state，也不标记任何 item 为 seen；该参数只改变退出码。
+
+状态语义：
+
+- `全部失败`：`sources_checked > 0`、`successful == 0`、`failed > 0`。没有任何启用 source 成功下载并解析 RSS/Atom，不能判断是否真的没有新资讯；digest 显示 failure guard 文案并保留错误诊断。
+- `部分成功`：至少一个 source 成功，同时至少一个 source 失败。digest 输出成功源中的可用条目，并在采集错误区记录失败源。
+- `无新增`：采集源成功解析，但当前运行没有发现未见过的新条目。此时可以显示“今日暂无新条目”。
+
+新增源诊断命令：
+
+```powershell
+.\.venv\Scripts\python.exe -m auv_intel_digest check-sources --sources examples\sources.example.json --timeout 20
+```
+
+输出字段：
+
+- name / url / enabled / category
+- HTTP status
+- content-type
+- byte count
+- parseable RSS/Atom
+- item count
+- error type / error message
+- diagnostic
+
+单个 source 失败不影响其他 source；总计输出 checked / successful / failed。测试使用 mock 网络。
+
+本地网络诊断命令：
+
+```powershell
+.\.venv\Scripts\python.exe -m auv_intel_digest check-sources --sources examples\sources.example.json --timeout 20
+Resolve-DnsName rss.arxiv.org
+Test-NetConnection rss.arxiv.org -Port 443
+curl.exe -I https://rss.arxiv.org/rss/cs.RO
+Invoke-WebRequest -Uri https://rss.arxiv.org/rss/cs.RO -UseBasicParsing -TimeoutSec 20
+netsh winhttp show proxy
+```
+
+`WinError 10013` / `socket_permission_denied` 通常表示当前 Windows 运行环境不允许 Python 建立该网络连接，可能来自 Windows 防火墙、杀毒软件、代理、沙箱网络限制或系统权限策略。
+
+GitHub Actions 云端 runner 可能绕过本地 Windows 网络限制，但不保证所有 RSS/Atom 源可用；程序仍应正确输出失败源、错误类型和诊断说明。GitHub Actions 更适合 `file_only` 或公网 webhook，不适合依赖本地 OneBot 的 QQ 推送。
+
+## 11. v0.5.0 cloud scheduled digest + Telegram delivery MVP
+
+新增目标：
+
+- 在 GitHub Actions 云端每天自动运行，不依赖本地 Windows 电脑开机。
+- 生成中文 RSS/Atom digest：`digests/latest.zh.md`。
+- 上传 GitHub Actions artifact。
+- 可选通过 Telegram Bot 推送 digest。
+- 可选使用 OpenAI summarizer 生成中文摘要。
+
+新增文件：
+
+```text
+.github/workflows/daily-digest.yml
+auv_intel_digest/notifiers/telegram.py
+tests/test_telegram_notifier.py
+```
+
+新增 CLI：
+
+```powershell
+.\.venv\Scripts\python.exe -m auv_intel_digest send-telegram --markdown digests\latest.zh.md --title "AUV 情报摘要"
+```
+
+Telegram 配置只从环境变量或 GitHub Actions Secrets 读取：
+
+```text
+TELEGRAM_BOT_TOKEN
+TELEGRAM_CHAT_ID
+TELEGRAM_PARSE_MODE      # 可选，默认不设置
+TELEGRAM_MAX_CHARS       # 默认 3800
+```
+
+GitHub Actions 配置：
+
+- schedule cron: `0 0 * * *`，对应北京时间 08:00。
+- 运行 `python -m auv_intel_digest collect --language zh --fail-on-all-source-errors`。
+- 上传 `digests/latest.zh.md` 和 `.auv_intel_digest/state.json` artifact。
+- 如果配置了 `TELEGRAM_BOT_TOKEN` 和 `TELEGRAM_CHAT_ID`，运行 `send-telegram`。
+- 最后根据 collect 退出码决定 workflow 是否失败，确保错误 digest 已先上传/推送。
+
+OpenAI 可选摘要：
+
+- `DIGEST_SUMMARIZER=noop` 默认不调用外部 LLM。
+- `DIGEST_SUMMARIZER=openai` 且 `OPENAI_API_KEY` 存在时调用 OpenAI summarizer。
+- `AUV_INTEL_LLM_MODEL` 控制模型名。
+- 测试不得真实调用 OpenAI API。
+
+当前限制：
+
+- Telegram 仅使用 `sendMessage` 分段推送，不上传附件。
+- GitHub Actions state 是 artifact，不会自动提交回仓库。
+- Notion、Email、WeCom/微信替代渠道未实现。
+- RSS/Atom 网络、Telegram 和 OpenAI 测试均应使用 mock。

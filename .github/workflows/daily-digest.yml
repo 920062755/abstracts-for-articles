@@ -1,0 +1,74 @@
+name: Daily AUV Intel Digest
+
+on:
+  schedule:
+    # 08:00 Beijing time is 00:00 UTC.
+    - cron: "0 0 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  digest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      AUV_INTEL_LLM_MODEL: ${{ vars.AUV_INTEL_LLM_MODEL || 'gpt-4o-mini' }}
+      DIGEST_SUMMARIZER: ${{ vars.DIGEST_SUMMARIZER || 'noop' }}
+      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+      TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+      TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+      TELEGRAM_MAX_CHARS: ${{ vars.TELEGRAM_MAX_CHARS || '3800' }}
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install package
+        run: python -m pip install -e .
+
+      - name: Generate Chinese digest
+        id: collect
+        shell: bash
+        run: |
+          set +e
+          python -m auv_intel_digest collect \
+            --sources examples/sources.example.json \
+            --output digests/latest.zh.md \
+            --limit 30 \
+            --state .auv_intel_digest/state.json \
+            --language zh \
+            --summarizer "${DIGEST_SUMMARIZER}" \
+            --llm-model "${AUV_INTEL_LLM_MODEL}" \
+            --fail-on-all-source-errors
+          exit_code=$?
+          echo "exit_code=${exit_code}" >> "$GITHUB_OUTPUT"
+          exit 0
+
+      - name: Upload digest artifact
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: auv-intel-digest
+          path: |
+            digests/latest.zh.md
+            .auv_intel_digest/state.json
+          if-no-files-found: warn
+
+      - name: Send Telegram digest
+        if: always() && env.TELEGRAM_BOT_TOKEN != '' && env.TELEGRAM_CHAT_ID != ''
+        run: |
+          python -m auv_intel_digest send-telegram \
+            --markdown digests/latest.zh.md \
+            --title "AUV 情报摘要" \
+            --max-chars "${TELEGRAM_MAX_CHARS}"
+
+      - name: Fail workflow when all sources failed
+        if: always() && steps.collect.outputs.exit_code != '0'
+        run: exit "${{ steps.collect.outputs.exit_code }}"

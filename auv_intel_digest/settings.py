@@ -44,6 +44,10 @@ class Settings:
     qq_target_id: str = ""
     qq_push_mode: str = "summary"
     qq_push_max_chars: int = 3500
+    telegram_bot_token: str = ""
+    telegram_chat_id: str = ""
+    telegram_parse_mode: str = ""
+    telegram_max_chars: int = 3800
     enable_github_actions: bool = False
     enable_auto_commit_reports: bool = False
     github_token: str = ""
@@ -72,6 +76,10 @@ class Settings:
             qq_target_id=os.getenv("QQ_TARGET_ID", ""),
             qq_push_mode=os.getenv("QQ_PUSH_MODE", "summary"),
             qq_push_max_chars=_int_env("QQ_PUSH_MAX_CHARS", 3500),
+            telegram_bot_token=os.getenv("TELEGRAM_BOT_TOKEN", ""),
+            telegram_chat_id=os.getenv("TELEGRAM_CHAT_ID", ""),
+            telegram_parse_mode=os.getenv("TELEGRAM_PARSE_MODE", ""),
+            telegram_max_chars=_int_env("TELEGRAM_MAX_CHARS", 3800),
             enable_github_actions=_bool_env("ENABLE_GITHUB_ACTIONS", False),
             enable_auto_commit_reports=_bool_env("ENABLE_AUTO_COMMIT_REPORTS", False),
             github_token=os.getenv("GITHUB_TOKEN", ""),
