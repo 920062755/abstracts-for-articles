@@ -16,3 +16,5 @@ tests/.tmp/
 local_context/
 
 local_context/
+.auv_intel_digest/
+digests/

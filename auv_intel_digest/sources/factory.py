@@ -13,6 +13,7 @@ from auv_intel_digest.sources.base import CollectionWindow, SourceClient
 from auv_intel_digest.sources.crossref import CrossrefClient
 from auv_intel_digest.sources.github import GitHubClient
 from auv_intel_digest.sources.openalex import OpenAlexClient
+from auv_intel_digest.sources.rss import RssAtomClient
 
 logger = logging.getLogger(__name__)
 
@@ -21,6 +22,7 @@ CLIENTS: dict[str, type[SourceClient]] = {
     "crossref": CrossrefClient,
     "openalex": OpenAlexClient,
     "github": GitHubClient,
+    "rss": RssAtomClient,
 }
 
 

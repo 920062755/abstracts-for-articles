@@ -1,0 +1,16 @@
+{
+  "sources": [
+    {
+      "name": "arXiv cs.RO RSS",
+      "url": "https://rss.arxiv.org/rss/cs.RO",
+      "category": "robotics",
+      "enabled": true
+    },
+    {
+      "name": "IEEE Spectrum Robotics",
+      "url": "https://spectrum.ieee.org/rss/robotics/fulltext",
+      "category": "robotics-news",
+      "enabled": true
+    }
+  ]
+}

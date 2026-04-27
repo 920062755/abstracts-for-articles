@@ -164,3 +164,45 @@ python -m compileall auv_intel_digest tests
    python -m compileall auv_intel_digest tests
    .\.venv\Scripts\python.exe -m pytest -q -p no:cacheprovider
 ```
+
+## 8. v0.3.0 scheduled intel digest MVP 更新
+
+当前新增能力：
+
+- 新增 `python -m auv_intel_digest scheduled-digest` 命令。
+- 支持从 JSON 配置读取多个 RSS/Atom sources。
+- 支持 RSS 2.0 和 Atom 基本字段解析：
+  - title
+  - link
+  - published / updated
+  - source
+  - summary / description
+  - guid / id
+- 新增本地 JSON state：
+  - 默认 `.auv_intel_digest/state.json`
+  - 按 guid / link / title 生成稳定 item id
+  - 默认只输出新条目
+  - `--include-seen` 可输出已见条目
+- 新增 Markdown digest 输出：
+  - run summary
+  - highlights
+  - source errors
+- 新增示例配置：
+  - `examples/sources.example.json`
+
+新增验证范围：
+
+- RSS fixture 解析
+- Atom fixture 解析
+- state 读写
+- 去重状态标记
+- Markdown digest 生成
+- scheduled digest CLI smoke test
+
+当前限制保持：
+
+- 不抓取完整网页正文；
+- 不接入 LLM；
+- 不做自动推送；
+- 不引入 Web UI 或数据库；
+- pytest 使用 mock 网络或本地 fixture，不依赖真实互联网。

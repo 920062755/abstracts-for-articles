@@ -249,3 +249,75 @@ pytest
 - 去重；
 - 报告生成；
 - notifier fallback。
+
+## v0.3.0 Scheduled RSS/Atom Digest
+
+本阶段新增一个独立的本地定时资讯摘要命令，优先面向 RSS/Atom 源，不抓取完整网页正文，不调用 LLM，不自动推送。
+
+示例 sources 配置：
+
+```text
+examples/sources.example.json
+```
+
+配置格式：
+
+```json
+{
+  "sources": [
+    {
+      "name": "arXiv cs.RO RSS",
+      "url": "https://rss.arxiv.org/rss/cs.RO",
+      "category": "robotics",
+      "enabled": true
+    }
+  ]
+}
+```
+
+运行一次采集并生成 Markdown digest：
+
+```powershell
+python -m auv_intel_digest scheduled-digest --sources examples/sources.example.json --output digests/latest.md --limit 30
+```
+
+调试时包含已经见过的条目：
+
+```powershell
+python -m auv_intel_digest scheduled-digest --sources examples/sources.example.json --output digests/latest.md --include-seen
+```
+
+指定 state 文件：
+
+```powershell
+python -m auv_intel_digest scheduled-digest --sources examples/sources.example.json --output digests/latest.md --state .auv_intel_digest/state.json
+```
+
+默认 state 路径为：
+
+```text
+.auv_intel_digest/state.json
+```
+
+该目录已加入 `.gitignore`，不要提交。
+
+Windows Task Scheduler 示例：
+
+```powershell
+cd C:\path\to\auv_intel_digest
+.\.venv\Scripts\python.exe -m auv_intel_digest scheduled-digest --sources examples\sources.example.json --output digests\latest.md --limit 30
+```
+
+建议设置：
+
+- Trigger: Daily, 08:00
+- Start in: 项目根目录
+- Action: 项目虚拟环境中的 Python
+
+当前限制：
+
+- 目前只做 RSS/Atom；
+- 不抓取完整网页正文；
+- 不做 LLM 深度总结；
+- 不做自动推送；
+- pytest 不依赖真实互联网，网络测试使用 mock。
