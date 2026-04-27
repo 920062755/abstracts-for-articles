@@ -12,3 +12,5 @@ data/
 logs/
 reports/daily/
 tests/.tmp/
+
+local_context/
