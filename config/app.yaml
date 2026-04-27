@@ -1,0 +1,31 @@
+timezone: "Asia/Shanghai"
+daily_run_time: "08:00"
+output_dir: "reports"
+state_db_path: "data/state.sqlite"
+log_level: "INFO"
+
+report:
+  language: "zh_with_original_en"
+  max_items_per_topic: 5
+  save_html: false
+  daily_dir: "daily"
+
+dedupe:
+  window_days: 90
+  priority:
+    - "doi"
+    - "arxiv_id"
+    - "url"
+    - "normalized_title"
+    - "title_similarity"
+  allow_updates: true
+
+notifier:
+  mode: "file_only"
+  strict_notify: false
+  qq_push_mode: "summary"
+  qq_push_max_chars: 3500
+
+github_actions:
+  enabled: false
+  auto_commit_reports: false

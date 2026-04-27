@@ -1,0 +1,80 @@
+topics:
+  multi_auv_cooperation:
+    name_zh: "多 AUV/UUV 协同作业"
+    name_en: "Multi-AUV/UUV Cooperative Operations"
+    enabled: true
+    weight: 1.0
+    keywords:
+      zh:
+        positive: ["多AUV", "多 AUV", "多UUV", "多 UUV", "水下机器人协同", "协同作业", "集群水下机器人"]
+        required_any: ["AUV", "UUV", "水下机器人"]
+        negative: ["无人机", "地面车辆"]
+      en:
+        positive: ["multi-AUV", "multi AUV", "multi-UUV", "multi UUV", "cooperative underwater vehicle", "autonomous underwater vehicle cooperation", "underwater swarm"]
+        required_any: ["AUV", "UUV", "autonomous underwater vehicle", "unmanned underwater vehicle"]
+        negative: ["UAV", "ground vehicle"]
+    tags: ["AUV", "UUV", "cooperation"]
+
+  multi_agent_planning:
+    name_zh: "多智能体协同规划"
+    name_en: "Multi-Agent Cooperative Planning"
+    enabled: true
+    weight: 0.9
+    keywords:
+      zh:
+        positive: ["多智能体规划", "协同规划", "任务分配", "路径规划"]
+        required_any: ["多智能体", "multi-agent"]
+        negative: []
+      en:
+        positive: ["multi-agent planning", "cooperative planning", "task allocation", "multi-robot planning", "distributed planning"]
+        required_any: ["multi-agent", "multi-robot"]
+        negative: []
+    tags: ["planning", "multi-agent"]
+
+  multi_auv_target_tracking:
+    name_zh: "多 AUV/UUV 协同目标跟踪"
+    name_en: "Multi-AUV/UUV Cooperative Target Tracking"
+    enabled: true
+    weight: 1.1
+    keywords:
+      zh:
+        positive: ["目标跟踪", "协同跟踪", "水下目标跟踪"]
+        required_any: ["AUV", "UUV", "水下机器人"]
+        negative: []
+      en:
+        positive: ["target tracking", "cooperative tracking", "underwater target tracking", "multi-AUV tracking"]
+        required_any: ["AUV", "UUV", "underwater vehicle"]
+        negative: []
+    tags: ["tracking", "AUV"]
+
+  pursuit_evasion_encirclement:
+    name_zh: "协同围捕 / pursuit-evasion / encirclement"
+    name_en: "Pursuit-Evasion and Encirclement"
+    enabled: true
+    weight: 1.0
+    keywords:
+      zh:
+        positive: ["围捕", "追逃", "追逃博弈", "协同围捕"]
+        required_any: ["围捕", "追逃", "pursuit", "evasion"]
+        negative: []
+      en:
+        positive: ["pursuit-evasion", "pursuit evasion", "encirclement", "cooperative pursuit", "capture strategy"]
+        required_any: ["pursuit", "evasion", "encirclement"]
+        negative: []
+    tags: ["pursuit-evasion", "encirclement"]
+
+  multi_agent_game:
+    name_zh: "多智能体博弈"
+    name_en: "Multi-Agent Games"
+    enabled: true
+    weight: 0.9
+    keywords:
+      zh:
+        positive: ["多智能体博弈", "博弈论", "微分博弈", "随机博弈"]
+        required_any: ["博弈", "game"]
+        negative: []
+      en:
+        positive: ["multi-agent game", "game theory", "differential game", "stochastic game", "Markov game"]
+        required_any: ["game", "game-theoretic"]
+        negative: []
+    tags: ["game theory", "multi-agent"]

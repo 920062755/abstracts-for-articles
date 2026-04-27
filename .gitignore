@@ -1,0 +1,14 @@
+.env
+.venv/
+.venv-test/
+.codex_tmp/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.pytest_tmp/
+.ruff_cache/
+*.egg-info/
+data/
+logs/
+reports/daily/
+tests/.tmp/

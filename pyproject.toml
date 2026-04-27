@@ -1,0 +1,42 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "auv-intel-digest"
+version = "0.2.0"
+description = "Daily AUV/UUV and multi-agent research intelligence digest."
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+  "feedparser>=6.0.11",
+  "httpx>=0.27.0",
+  "jinja2>=3.1.0",
+  "python-dotenv>=1.0.0",
+  "pyyaml>=6.0.0",
+  "tenacity>=8.2.0",
+  "tzdata>=2024.1",
+  "typer>=0.12.0",
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=8.0.0",
+  "ruff>=0.5.0",
+]
+
+[project.scripts]
+auv-digest = "auv_intel_digest.cli:app"
+
+[tool.setuptools.packages.find]
+include = ["auv_intel_digest*"]
+
+[tool.setuptools.package-data]
+auv_intel_digest = ["reports/templates/*.j2"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"

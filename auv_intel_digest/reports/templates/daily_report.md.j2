@@ -1,0 +1,82 @@
+# AUV/UUV 科研资讯日报 - {{ digest.report_date.isoformat() }}
+
+生成时间：{{ digest.generated_at }}  
+时区：{{ digest.timezone }}  
+报告语言：中文为主，保留英文原题与关键术语  
+每个主题最多展示：{{ max_items_per_topic }} 条精选
+
+## 摘要
+
+- 今日候选总条目数：{{ digest.items | length }}
+- 今日最值得关注：{{ top_items | length }} 条
+{% for topic in digest.topics %}
+- {{ topic.name_zh }}：{{ selected_by_topic[topic.key] | length }} 条精选
+{% endfor %}
+
+## 今日最值得关注的 3 条
+
+{% if top_items %}
+{% for item in top_items %}
+### {{ loop.index }}. {{ item.title }}
+
+- 主题：{{ item.topic }}
+- 来源：{{ item.source }}
+- 日期：{{ item.published_date or "未知" }}
+- 作者：{{ item.authors | join(", ") if item.authors else "未知" }}
+- 链接：{{ item.url }}
+- 分数：{{ "%.2f"|format(item.score) }}
+- 标签：{{ item.tags | join(", ") }}
+- 推荐理由：{{ item.reason }}
+- 可能与你研究的关联：该条目涉及 {{ item.matched_keywords | join(", ") }}，可用于跟踪 multi-AUV、cooperative planning、pursuit-evasion 或 Markov game 等方向的最新进展。
+- 今日建议阅读：优先阅读摘要、方法设定和实验场景，判断是否与多 AUV/UUV 协同任务建模相关。
+
+{% if item.abstract %}
+原始摘要：
+
+> {{ item.abstract }}
+{% endif %}
+
+{% endfor %}
+{% else %}
+今日暂无高相关更新。
+{% endif %}
+
+## 按主题精选
+
+{% for topic in digest.topics %}
+### {{ topic.name_zh }}
+
+{% set topic_items = selected_by_topic[topic.key] %}
+{% if topic_items %}
+{% for item in topic_items %}
+#### {{ loop.index }}. {{ item.title }}
+
+- 来源：{{ item.source }}
+- 日期：{{ item.published_date or "未知" }}
+- 作者：{{ item.authors | join(", ") if item.authors else "未知" }}
+- 链接：{{ item.url }}
+- 分数：{{ "%.2f"|format(item.score) }}
+- 命中关键词：{{ item.matched_keywords | join(", ") }}
+- 推荐理由：{{ item.reason }}
+- 可能与你研究的关联：该条目与“{{ topic.name_zh }}”相关，建议关注其问题定义、约束条件和仿真/实测平台。
+- 今日建议阅读：先看 abstract 与 conclusion，再决定是否加入精读列表。
+
+{% if item.abstract %}
+原始摘要：
+
+> {{ item.abstract }}
+{% endif %}
+
+{% endfor %}
+{% else %}
+今日暂无高相关更新。
+{% endif %}
+
+{% endfor %}
+## 采集状态
+
+| Source | Status | Items | Error |
+|---|---:|---:|---|
+{% for status in digest.source_status %}
+| {{ status.source }} | {{ status.status }} | {{ status.items }} | {{ status.error or "" }} |
+{% endfor %}

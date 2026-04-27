@@ -1,0 +1,59 @@
+global:
+  days_back: 1
+  max_items_per_source: 50
+  request_timeout_seconds: 20
+  user_agent: "auv_intel_digest/0.1 contact:${CONTACT_EMAIL}"
+  respect_rate_limit: true
+
+sources:
+  arxiv:
+    enabled: true
+    type: "arxiv"
+    max_results: 50
+    sort_by: "submittedDate"
+    categories: ["cs.RO", "cs.AI", "cs.MA", "eess.SY"]
+    query_mode: "per_topic"
+
+  crossref:
+    enabled: true
+    type: "crossref"
+    max_results: 30
+    mailto_env: "CONTACT_EMAIL"
+
+  openalex:
+    enabled: true
+    type: "openalex"
+    max_results: 50
+    mailto_env: "CONTACT_EMAIL"
+
+  semantic_scholar:
+    enabled: false
+    type: "semantic_scholar"
+    max_results: 30
+    api_key_env: "SEMANTIC_SCHOLAR_API_KEY"
+
+  rss:
+    enabled: true
+    type: "rss"
+    feeds:
+      - name: "arXiv cs.RO"
+        url: "https://rss.arxiv.org/rss/cs.RO"
+      - name: "IEEE Spectrum Robotics"
+        url: "https://spectrum.ieee.org/rss/robotics/fulltext"
+
+  github:
+    enabled: false
+    type: "github"
+    max_results: 20
+    token_env: "GITHUB_TOKEN"
+    min_stars: 5
+    search:
+      sort: "updated"
+      order: "desc"
+
+  web_search:
+    enabled: false
+    type: "web_search"
+    provider: "serpapi"
+    api_key_env: "SERPAPI_API_KEY"
+    max_results: 20
