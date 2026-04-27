@@ -6,7 +6,11 @@ import pytest
 from typer.testing import CliRunner
 
 from auv_intel_digest.cli import app
-from auv_intel_digest.notifiers.telegram import TelegramNotifier, split_telegram_message
+from auv_intel_digest.notifiers.telegram import (
+    TelegramNotifier,
+    build_telegram_message,
+    split_telegram_message,
+)
 
 
 def test_telegram_notifier_sends_chunked_messages_with_mock_http():
@@ -84,6 +88,17 @@ def test_split_telegram_message_limits_chunk_size():
     assert all(len(chunk) <= 500 for chunk in chunks)
 
 
+def test_all_source_failure_digest_adds_telegram_warning():
+    message = build_telegram_message(
+        title="AUV 情报摘要",
+        markdown="# AUV 情报摘要\n\n- 运行状态：全部失败\n",
+        markdown_path=Path("digests/latest.zh.md"),
+        json_path=Path("digests/latest.zh.json"),
+    )
+
+    assert message.startswith("⚠️ AUV 情报摘要采集失败")
+
+
 def test_send_telegram_cli_smoke(monkeypatch):
     calls = []
 
@@ -109,3 +124,50 @@ def test_send_telegram_cli_smoke(monkeypatch):
     assert "Telegram: sent 2 message chunk(s)" in result.output
     assert calls[0]["title"] == "Daily Digest"
     assert calls[0]["max_chars"] == 1000
+
+
+def test_send_telegram_cli_skips_when_secrets_missing(monkeypatch):
+    base = Path("tests/.tmp/telegram")
+    base.mkdir(parents=True, exist_ok=True)
+    markdown = base / "latest.zh.md"
+    markdown.write_text("# AUV 情报摘要\n", encoding="utf-8")
+    monkeypatch.delenv("TELEGRAM_BOT_TOKEN", raising=False)
+    monkeypatch.delenv("TELEGRAM_CHAT_ID", raising=False)
+
+    result = CliRunner().invoke(app, ["send-telegram", "--markdown", str(markdown)])
+
+    assert result.exit_code == 0
+    assert "Telegram: skipped" in result.output
+
+
+def test_deployment_check_cli_does_not_leak_secret_values(monkeypatch):
+    base = Path("tests/.tmp/deployment_check")
+    base.mkdir(parents=True, exist_ok=True)
+    sources = base / "sources.json"
+    state_dir = base / "state"
+    output_dir = base / "digests"
+    sources.write_text('{"sources": []}', encoding="utf-8")
+    monkeypatch.setenv("TELEGRAM_BOT_TOKEN", "secret-token")
+    monkeypatch.setenv("TELEGRAM_CHAT_ID", "secret-chat")
+    monkeypatch.setenv("OPENAI_API_KEY", "secret-openai")
+
+    result = CliRunner().invoke(
+        app,
+        [
+            "deployment-check",
+            "--sources",
+            str(sources),
+            "--state-dir",
+            str(state_dir),
+            "--output-dir",
+            str(output_dir),
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert "telegram_bot_token: present" in result.output
+    assert "telegram_chat_id: present" in result.output
+    assert "openai_api_key: present" in result.output
+    assert "secret-token" not in result.output
+    assert "secret-chat" not in result.output
+    assert "secret-openai" not in result.output

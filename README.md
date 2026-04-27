@@ -480,3 +480,153 @@ $env:AUV_INTEL_LLM_MODEL="gpt-4o-mini"
 - workflow 最后会根据 `collect --fail-on-all-source-errors` 的退出码决定是否标红失败；这样 artifact 和 Telegram 仍有机会保留错误信息。
 - Telegram 推送目前使用 `sendMessage`，按 `TELEGRAM_MAX_CHARS` 分段，不做文件上传。
 - Notion、Email、WeCom/微信替代渠道本阶段不实现，只保留后续扩展空间。
+
+## v0.5.1 生产部署核验
+
+### 1. 推送代码到 GitHub
+
+先确认 remote：
+
+```powershell
+git remote -v
+```
+
+如果没有 remote，先在 GitHub 创建仓库，然后添加：
+
+```powershell
+git remote add origin https://github.com/<your-user>/<your-repo>.git
+git branch -M main
+```
+
+推送代码和 tag：
+
+```powershell
+git push -u origin main
+git push --tags
+```
+
+### 2. 配置 GitHub Secrets 和 Variables
+
+路径：
+
+```text
+GitHub repo -> Settings -> Secrets and variables -> Actions
+```
+
+Secrets：
+
+```text
+TELEGRAM_BOT_TOKEN
+TELEGRAM_CHAT_ID
+OPENAI_API_KEY
+```
+
+`OPENAI_API_KEY` 是可选项。没有 OpenAI key 时，workflow 仍可使用 `noop` 摘要器运行，只是中文深度摘要质量有限。
+
+Variables：
+
+```text
+DIGEST_SUMMARIZER=noop
+AUV_INTEL_LLM_MODEL=gpt-4o-mini
+TELEGRAM_MAX_CHARS=3800
+```
+
+需要启用 OpenAI 摘要时，把 `DIGEST_SUMMARIZER` 改为：
+
+```text
+openai
+```
+
+不要把 secret 写入代码、README、sources 配置或 commit。
+
+### 3. 创建 Telegram bot
+
+1. 在 Telegram 中打开 `BotFather`。
+2. 使用 `/newbot` 创建 bot。
+3. 保存 BotFather 返回的 bot token，放入 GitHub Secret `TELEGRAM_BOT_TOKEN`。
+4. 给 bot 发送一条消息，或把 bot 加入目标群组。
+5. 获取 chat id，放入 GitHub Secret `TELEGRAM_CHAT_ID`。
+6. 本地可用以下命令测试，但不要把 token/chat id 写入文件：
+
+```powershell
+$env:TELEGRAM_BOT_TOKEN="your_bot_token"
+$env:TELEGRAM_CHAT_ID="your_chat_id"
+.\.venv\Scripts\python.exe -m auv_intel_digest send-telegram --markdown digests\latest.zh.md --title "AUV 情报摘要"
+```
+
+如果未配置 Telegram 环境变量，`send-telegram` 会显示 skipped，不会崩溃。
+
+### 4. 手动触发 workflow
+
+路径：
+
+```text
+GitHub repo -> Actions -> Daily AUV Intel Digest -> Run workflow
+```
+
+运行后检查：
+
+- workflow log；
+- `auv-intel-digest-${run_id}` artifact；
+- artifact 中的 `digests/latest.zh.md`；
+- Telegram 是否收到摘要或明确失败告警。
+
+### 5. 定时运行说明
+
+workflow 使用：
+
+```yaml
+schedule:
+  - cron: "0 0 * * *"
+```
+
+GitHub Actions 的 cron 是 UTC 时间。`0 0 * * *` 对应北京时间每天 08:00。若要改成其他本地时间，需要换算到 UTC 后修改 cron。
+
+### 6. state/cache 方案
+
+GitHub Actions 使用 `actions/cache@v4` 缓存：
+
+```text
+.auv_intel_digest/
+```
+
+运行前按分支 restore 最近的 state cache，运行后在成功 workflow 中保存新的 cache。这样可以跨多次 GitHub Actions 运行保留 `.auv_intel_digest/state.json`，减少重复推送旧资讯。
+
+限制：
+
+- cache restore 失败时 workflow 仍可运行，但可能重复输出旧条目；
+- cache 不包含 secret；
+- `.auv_intel_digest/` 已在 `.gitignore` 中，不应提交；
+- 如果所有 source 都失败，程序不会更新 state。
+
+### 7. 验证成功标准
+
+一次可接受的生产运行应满足：
+
+- workflow 可以手动触发；
+- workflow 可以按 UTC 00:00 自动触发；
+- workflow 运行 compileall 和 pytest；
+- workflow 生成中文 `digests/latest.zh.md`；
+- artifact 可下载；
+- Telegram 收到摘要，或在所有 source 失败时收到明显失败告警；
+- 没有 secret 出现在日志、digest、state 或 README 中；
+- 如果 source 全部失败，workflow 可以标红，但 artifact 和 Telegram 告警应已经处理。
+
+### 8. 常见故障排查
+
+- 没有收到 Telegram：检查 `TELEGRAM_BOT_TOKEN`、`TELEGRAM_CHAT_ID`，确认 bot 已收到过消息或已在群组中。
+- chat id 不对：重新给 bot 发消息后通过 Telegram Bot API 或调试工具确认 chat id。
+- workflow 没有定时触发：确认 workflow 已在默认分支，仓库 Actions 已启用，cron 是 UTC。
+- RSS source 全失败：查看 `check-sources` step 和 digest 的“采集错误”。
+- OpenAI summarizer 没有启用：确认 `DIGEST_SUMMARIZER=openai` 且 `OPENAI_API_KEY` 存在。
+- artifact 找不到：检查 `Upload digest artifact` step，artifact 名称包含 GitHub run id。
+- 每天重复旧资讯：检查 `Restore scheduled digest state` step 是否命中 cache，确认 `.auv_intel_digest/state.json` 在 artifact/cache 中存在。
+- cache/state 不生效：GitHub cache 是按分支和 key restore 的；首次运行没有 cache 属于正常情况。
+
+### 9. 本地部署核验
+
+```powershell
+.\.venv\Scripts\python.exe -m auv_intel_digest deployment-check
+```
+
+该命令只显示 secret 是否 present/missing，不打印 secret 值。

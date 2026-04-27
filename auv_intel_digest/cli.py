@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import os
+import sys
 from datetime import date
 from pathlib import Path
 from typing import Optional
@@ -241,4 +243,84 @@ def send_telegram(
         html_path=html_path,
         max_chars=max_chars,
     )
+    if chunks == 0:
+        typer.echo("Telegram: skipped because TELEGRAM_BOT_TOKEN or TELEGRAM_CHAT_ID is missing.")
+        return
     typer.echo(f"Telegram: sent {chunks} message chunk(s)")
+
+
+@app.command("deployment-check")
+def deployment_check(
+    sources: Path = typer.Option(
+        Path("examples/sources.example.json"),
+        "--sources",
+        help="JSON file containing RSS/Atom sources.",
+    ),
+    state_dir: Path = typer.Option(
+        Path(".auv_intel_digest"),
+        "--state-dir",
+        help="Directory used for local scheduled digest state.",
+    ),
+    output_dir: Path = typer.Option(
+        Path("digests"),
+        "--output-dir",
+        help="Directory used for generated digest files.",
+    ),
+) -> None:
+    _run_deployment_check(sources=sources, state_dir=state_dir, output_dir=output_dir)
+
+
+@app.command("doctor")
+def doctor(
+    sources: Path = typer.Option(
+        Path("examples/sources.example.json"),
+        "--sources",
+        help="JSON file containing RSS/Atom sources.",
+    ),
+    state_dir: Path = typer.Option(
+        Path(".auv_intel_digest"),
+        "--state-dir",
+        help="Directory used for local scheduled digest state.",
+    ),
+    output_dir: Path = typer.Option(
+        Path("digests"),
+        "--output-dir",
+        help="Directory used for generated digest files.",
+    ),
+) -> None:
+    _run_deployment_check(sources=sources, state_dir=state_dir, output_dir=output_dir)
+
+
+def _run_deployment_check(*, sources: Path, state_dir: Path, output_dir: Path) -> None:
+    checks = [
+        ("python_version", f"{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}"),
+        ("package_import", "ok"),
+        ("sources_file", "present" if sources.exists() else "missing"),
+        ("state_dir_writable", "yes" if _ensure_writable_dir(state_dir) else "no"),
+        ("output_dir_writable", "yes" if _ensure_writable_dir(output_dir) else "no"),
+        ("openai_api_key", "present" if os.getenv("OPENAI_API_KEY") else "missing"),
+        ("telegram_bot_token", "present" if os.getenv("TELEGRAM_BOT_TOKEN") else "missing"),
+        ("telegram_chat_id", "present" if os.getenv("TELEGRAM_CHAT_ID") else "missing"),
+    ]
+    for name, value in checks:
+        typer.echo(f"{name}: {value}")
+
+    typer.echo("next_steps:")
+    if not sources.exists():
+        typer.echo("- Create or fix the sources JSON file before running collect.")
+    if not os.getenv("TELEGRAM_BOT_TOKEN") or not os.getenv("TELEGRAM_CHAT_ID"):
+        typer.echo("- Configure Telegram secrets to enable delivery; artifact generation still works.")
+    if not os.getenv("OPENAI_API_KEY"):
+        typer.echo("- OPENAI_API_KEY is missing; use noop summarizer or configure the secret.")
+    typer.echo("- Run check-sources, then collect, then send-telegram or GitHub Actions workflow_dispatch.")
+
+
+def _ensure_writable_dir(path: Path) -> bool:
+    try:
+        path.mkdir(parents=True, exist_ok=True)
+        probe = path / ".write-test"
+        probe.write_text("ok", encoding="utf-8")
+        probe.unlink()
+        return True
+    except OSError:
+        return False

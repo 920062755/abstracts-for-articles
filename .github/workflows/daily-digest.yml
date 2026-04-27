@@ -20,6 +20,7 @@ jobs:
       TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
       TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
       TELEGRAM_MAX_CHARS: ${{ vars.TELEGRAM_MAX_CHARS || '3800' }}
+      STATE_CACHE_KEY: auv-intel-state-${{ github.ref_name }}-${{ github.run_id }}
 
     steps:
       - name: Check out repository
@@ -31,23 +32,47 @@ jobs:
           python-version: "3.11"
 
       - name: Install package
-        run: python -m pip install -e .
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e ".[dev]"
+
+      - name: Verify package and tests
+        run: |
+          python -m compileall auv_intel_digest tests
+          python -m pytest -q -p no:cacheprovider
+
+      - name: Restore scheduled digest state
+        uses: actions/cache@v4
+        with:
+          path: .auv_intel_digest
+          key: ${{ env.STATE_CACHE_KEY }}
+          restore-keys: |
+            auv-intel-state-${{ github.ref_name }}-
+
+      - name: Prepare runtime directories
+        run: mkdir -p digests .auv_intel_digest
+
+      - name: Check RSS/Atom sources
+        run: python -m auv_intel_digest check-sources --sources examples/sources.example.json --timeout 20
 
       - name: Generate Chinese digest
         id: collect
         shell: bash
         run: |
           set +e
+          SUMMARIZER="${DIGEST_SUMMARIZER:-noop}"
+          MODEL="${AUV_INTEL_LLM_MODEL:-gpt-4o-mini}"
           python -m auv_intel_digest collect \
             --sources examples/sources.example.json \
             --output digests/latest.zh.md \
             --limit 30 \
             --state .auv_intel_digest/state.json \
             --language zh \
-            --summarizer "${DIGEST_SUMMARIZER}" \
-            --llm-model "${AUV_INTEL_LLM_MODEL}" \
+            --summarizer "${SUMMARIZER}" \
+            --llm-model "${MODEL}" \
             --fail-on-all-source-errors
           exit_code=$?
+          echo "COLLECT_EXIT_CODE=${exit_code}" >> "$GITHUB_ENV"
           echo "exit_code=${exit_code}" >> "$GITHUB_OUTPUT"
           exit 0
 
@@ -55,14 +80,15 @@ jobs:
         uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: auv-intel-digest
+          name: auv-intel-digest-${{ github.run_id }}
           path: |
             digests/latest.zh.md
             .auv_intel_digest/state.json
           if-no-files-found: warn
 
       - name: Send Telegram digest
-        if: always() && env.TELEGRAM_BOT_TOKEN != '' && env.TELEGRAM_CHAT_ID != ''
+        if: always()
+        continue-on-error: true
         run: |
           python -m auv_intel_digest send-telegram \
             --markdown digests/latest.zh.md \
@@ -70,5 +96,5 @@ jobs:
             --max-chars "${TELEGRAM_MAX_CHARS}"
 
       - name: Fail workflow when all sources failed
-        if: always() && steps.collect.outputs.exit_code != '0'
-        run: exit "${{ steps.collect.outputs.exit_code }}"
+        if: always() && env.COLLECT_EXIT_CODE != '' && env.COLLECT_EXIT_CODE != '0'
+        run: exit "${COLLECT_EXIT_CODE}"

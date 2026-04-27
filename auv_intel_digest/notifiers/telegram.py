@@ -28,6 +28,9 @@ class TelegramNotifier(Notifier):
         self.max_chars = max(500, min(max_chars, 4096))
         self.http_client = http_client
 
+    def is_configured(self) -> bool:
+        return bool(self.bot_token and self.chat_id)
+
     def send(
         self,
         *,
@@ -37,7 +40,7 @@ class TelegramNotifier(Notifier):
         json_path: Path,
         html_path: Path | None = None,
     ) -> None:
-        if not self.bot_token or not self.chat_id:
+        if not self.is_configured():
             raise RuntimeError("Telegram bot token or chat ID is not configured.")
 
         message = build_telegram_message(
@@ -84,17 +87,30 @@ def build_telegram_message(
     json_path: Path,
     html_path: Path | None = None,
 ) -> str:
+    failed_warning = []
+    if is_all_source_failure_digest(markdown):
+        failed_warning = ["⚠️ AUV 情报摘要采集失败", ""]
     lines = [
+        *failed_warning,
         title,
         "",
         markdown.strip(),
         "",
+        "GitHub Actions artifact: auv-intel-digest",
         f"Markdown: {markdown_path}",
         f"JSON: {json_path}",
     ]
     if html_path:
         lines.append(f"HTML: {html_path}")
     return "\n".join(lines).strip()
+
+
+def is_all_source_failure_digest(markdown: str) -> bool:
+    return (
+        "运行状态：全部失败" in markdown
+        or "本次未生成有效情报摘要，因为所有资讯源采集失败" in markdown
+        or "all sources failed" in markdown.lower()
+    )
 
 
 def split_telegram_message(message: str, max_chars: int = 3800) -> list[str]:
@@ -141,6 +157,8 @@ def send_markdown_file_via_telegram(
     if selected_max_chars is None:
         selected_max_chars = int(os.getenv("TELEGRAM_MAX_CHARS", "3800") or "3800")
     selected_notifier = notifier or TelegramNotifier(max_chars=selected_max_chars)
+    if not selected_notifier.is_configured():
+        return 0
     selected_notifier.send(
         title=title,
         markdown=markdown,

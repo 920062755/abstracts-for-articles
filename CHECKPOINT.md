@@ -385,3 +385,73 @@ OpenAI 可选摘要：
 - GitHub Actions state 是 artifact，不会自动提交回仓库。
 - Notion、Email、WeCom/微信替代渠道未实现。
 - RSS/Atom 网络、Telegram 和 OpenAI 测试均应使用 mock。
+
+## 12. v0.5.1 production verification and hardening
+
+本阶段目标是把 v0.5.0 从“功能可用”收口到“可部署、可诊断、可每天自动运行”。
+
+修复/增强：
+
+- GitHub Actions workflow 增加基础验证：
+  - `python -m compileall auv_intel_digest tests`
+  - `python -m pytest -q -p no:cacheprovider`
+  - `python -m auv_intel_digest check-sources --sources examples/sources.example.json --timeout 20`
+- workflow 增加 `actions/cache@v4`，缓存 `.auv_intel_digest/`，用于跨 GitHub Actions 运行恢复 state。
+- workflow artifact 名称包含 `${{ github.run_id }}`：
+  - `digests/latest.zh.md`
+  - `.auv_intel_digest/state.json`
+- workflow 捕获 collect 退出码，先上传 artifact、再尝试 Telegram，最后根据 collect 退出码决定 workflow 是否失败。
+- `send-telegram` 在缺少 `TELEGRAM_BOT_TOKEN` 或 `TELEGRAM_CHAT_ID` 时返回 skipped，不崩溃。
+- Telegram HTTP 错误会输出简短错误，不泄露 bot token。
+- Telegram 长消息按 `TELEGRAM_MAX_CHARS` 分段。
+- 所有 source 失败时，Telegram 第一段包含：
+
+```text
+⚠️ AUV 情报摘要采集失败
+```
+
+- 新增部署核验命令：
+
+```powershell
+python -m auv_intel_digest deployment-check
+python -m auv_intel_digest doctor
+```
+
+部署核验命令检查：
+
+- Python 版本；
+- 包导入；
+- sources 文件是否存在；
+- `.auv_intel_digest/` 是否可写；
+- `digests/` 是否可写；
+- `OPENAI_API_KEY` 是否 present/missing；
+- `TELEGRAM_BOT_TOKEN` 是否 present/missing；
+- `TELEGRAM_CHAT_ID` 是否 present/missing；
+- 不打印 secret 值。
+
+GitHub Actions 当前运行语义：
+
+- 支持手动触发：`workflow_dispatch`。
+- 支持每日计划：UTC 00:00，即北京时间 08:00。
+- Ubuntu runner，Python 3.11。
+- 安装命令：`python -m pip install -e ".[dev]"`。
+- `DIGEST_SUMMARIZER=noop` 默认不调用 OpenAI。
+- `DIGEST_SUMMARIZER=openai` 且 `OPENAI_API_KEY` 存在时启用 OpenAI summarizer。
+- Telegram secrets 缺失时 workflow 仍生成 artifact；`send-telegram` 输出 skipped。
+- 所有 source 失败时，collect 返回 2，workflow 最终标红；但 artifact 上传和 Telegram 告警会先执行。
+
+README 已补充可操作部署手册：
+
+- 推送代码到 GitHub；
+- 配置 GitHub Secrets / Variables；
+- 创建 Telegram bot；
+- 手动 Run workflow；
+- 验证 artifact / Telegram / logs；
+- state/cache 限制；
+- 常见故障排查。
+
+当前限制：
+
+- Telegram 仍只使用 `sendMessage`，不上传附件。
+- state 通过 GitHub cache 恢复；首次运行或 cache miss 可能重复输出旧条目。
+- Notion、Email、WeCom/微信、Web UI、Docker、VPS 均未实现。
