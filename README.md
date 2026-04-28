@@ -751,3 +751,33 @@ $env:AUV_INTEL_LLM_MODEL="Qwen/Qwen2.5-7B-Instruct"
 - QQ 推送仍保留本地 OneBot 路线，但不作为云端默认推送；
 - Telegram 不作为默认推送方式；
 - SMTP、SiliconFlow、OpenAI、RSS 测试均使用 mock，不依赖真实外部服务。
+
+## v0.6.1 LLM reliability hardening
+
+SiliconFlow/OpenAI-compatible summarizer now supports model fallback, timeout tuning,
+response diagnostics, and an LLM item limit.
+
+Recommended GitHub Variables:
+
+```text
+DIGEST_SUMMARIZER=siliconflow
+AUV_INTEL_LLM_BASE_URL=https://api.siliconflow.cn/v1
+AUV_INTEL_LLM_MODEL=Qwen/Qwen2.5-7B-Instruct
+AUV_INTEL_LLM_FALLBACK_MODELS=Pro/Qwen/Qwen2.5-7B-Instruct,deepseek-ai/DeepSeek-V3
+AUV_INTEL_LLM_TIMEOUT=60
+AUV_INTEL_LLM_MAX_ITEMS=10
+```
+
+Required GitHub Secret for SiliconFlow:
+
+```text
+AUV_INTEL_LLM_API_KEY
+```
+
+Behavior:
+
+- Primary model is tried first.
+- If it times out or returns invalid output, fallback models are tried in order.
+- If all models fail, only that item falls back to noop; digest generation and email delivery continue.
+- Error hints include error type, HTTP status when available, content-type, and a short response preview. API keys are not printed.
+- `AUV_INTEL_LLM_MAX_ITEMS` limits how many digest items call the LLM in one run; later items use noop fallback.

@@ -57,6 +57,13 @@ def test_daily_digest_workflow_uses_siliconflow_and_email_secrets_without_values
 
     assert "AUV_INTEL_LLM_API_KEY: ${{ secrets.AUV_INTEL_LLM_API_KEY }}" in text
     assert "AUV_INTEL_LLM_BASE_URL" in text
+    assert "AUV_INTEL_LLM_MODEL: ${{ vars.AUV_INTEL_LLM_MODEL || 'Qwen/Qwen2.5-7B-Instruct' }}" in text
+    assert (
+        "AUV_INTEL_LLM_FALLBACK_MODELS: ${{ vars.AUV_INTEL_LLM_FALLBACK_MODELS || "
+        "'Pro/Qwen/Qwen2.5-7B-Instruct,deepseek-ai/DeepSeek-V3' }}"
+    ) in text
+    assert "AUV_INTEL_LLM_TIMEOUT: ${{ vars.AUV_INTEL_LLM_TIMEOUT || '60' }}" in text
+    assert "AUV_INTEL_LLM_MAX_ITEMS: ${{ vars.AUV_INTEL_LLM_MAX_ITEMS || '10' }}" in text
     assert "SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD }}" in text
     assert "EMAIL_TO: ${{ vars.EMAIL_TO || '920062755@qq.com' }}" in text
     assert "secret-auth-code" not in text

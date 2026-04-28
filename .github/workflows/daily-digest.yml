@@ -20,6 +20,9 @@ jobs:
       DIGEST_SUMMARIZER: ${{ vars.DIGEST_SUMMARIZER || 'noop' }}
       AUV_INTEL_LLM_BASE_URL: ${{ vars.AUV_INTEL_LLM_BASE_URL || 'https://api.siliconflow.cn/v1' }}
       AUV_INTEL_LLM_MODEL: ${{ vars.AUV_INTEL_LLM_MODEL || 'Qwen/Qwen2.5-7B-Instruct' }}
+      AUV_INTEL_LLM_FALLBACK_MODELS: ${{ vars.AUV_INTEL_LLM_FALLBACK_MODELS || 'Pro/Qwen/Qwen2.5-7B-Instruct,deepseek-ai/DeepSeek-V3' }}
+      AUV_INTEL_LLM_TIMEOUT: ${{ vars.AUV_INTEL_LLM_TIMEOUT || '60' }}
+      AUV_INTEL_LLM_MAX_ITEMS: ${{ vars.AUV_INTEL_LLM_MAX_ITEMS || '10' }}
       AUV_INTEL_LLM_API_KEY: ${{ secrets.AUV_INTEL_LLM_API_KEY }}
       OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
       EMAIL_ENABLED: ${{ vars.EMAIL_ENABLED || 'true' }}

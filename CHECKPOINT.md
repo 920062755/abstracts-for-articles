@@ -499,3 +499,20 @@ README 已补充可操作部署手册：
 - Telegram 保留后续扩展空间，但不是默认推送方式。
 - QQ OneBot 仍适合本地或公网 OneBot endpoint，不适合默认 GitHub Actions 云端推送。
 - GitHub Actions state 依赖 cache，首次运行或 cache miss 时可能重复输出旧资讯。
+
+## v0.6.1 LLM reliability hardening
+
+Current additions:
+
+- OpenAI-compatible summarizer supports fallback model chain.
+- Recommended SiliconFlow model settings:
+  - primary: `Qwen/Qwen2.5-7B-Instruct`
+  - fallback: `Pro/Qwen/Qwen2.5-7B-Instruct`
+  - fallback: `deepseek-ai/DeepSeek-V3`
+- New environment / GitHub Variables:
+  - `AUV_INTEL_LLM_FALLBACK_MODELS`
+  - `AUV_INTEL_LLM_TIMEOUT`
+  - `AUV_INTEL_LLM_MAX_ITEMS`
+- Per-item LLM failures fall back to noop and do not block digest generation or email delivery.
+- Failure warnings now include error type, HTTP status/content-type when available, and a short response preview without secrets.
+- Tests still mock LLM HTTP and do not call SiliconFlow/OpenAI.
