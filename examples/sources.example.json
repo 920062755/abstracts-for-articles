@@ -8,7 +8,7 @@
     },
     {
       "name": "IEEE Spectrum Robotics",
-      "url": "https://spectrum.ieee.org/rss/robotics/fulltext",
+      "url": "https://spectrum.ieee.org/feeds/topic/robotics.rss",
       "category": "robotics-news",
       "enabled": true
     }

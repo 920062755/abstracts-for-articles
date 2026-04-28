@@ -98,9 +98,10 @@ def build_telegram_message(
         "",
         "GitHub Actions artifact: auv-intel-digest",
         f"Markdown: {markdown_path}",
-        f"JSON: {json_path}",
     ]
-    if html_path:
+    if json_path.exists():
+        lines.append(f"JSON: {json_path}")
+    if html_path and html_path.exists():
         lines.append(f"HTML: {html_path}")
     return "\n".join(lines).strip()
 

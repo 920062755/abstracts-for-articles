@@ -86,15 +86,12 @@ def build_email_message(
     message["Subject"] = title
     message["From"] = email_from
     message["To"] = email_to
-    body = "\n".join(
-        [
-            markdown.strip(),
-            "",
-            f"Markdown: {markdown_path}",
-            f"JSON: {json_path}",
-            f"HTML: {html_path}" if html_path else "",
-        ]
-    ).strip()
+    links = [f"Markdown: {markdown_path}"]
+    if json_path.exists():
+        links.append(f"JSON: {json_path}")
+    if html_path and html_path.exists():
+        links.append(f"HTML: {html_path}")
+    body = "\n".join([markdown.strip(), "", *links]).strip()
     message.set_content(body, subtype="plain", charset="utf-8")
     return message
 

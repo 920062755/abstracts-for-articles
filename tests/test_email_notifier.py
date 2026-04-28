@@ -3,7 +3,11 @@ from pathlib import Path
 from typer.testing import CliRunner
 
 from auv_intel_digest.cli import app
-from auv_intel_digest.notifiers.email import EmailNotifier, send_markdown_file_via_email
+from auv_intel_digest.notifiers.email import (
+    EmailNotifier,
+    build_email_message,
+    send_markdown_file_via_email,
+)
 
 
 class FakeSMTP:
@@ -67,6 +71,29 @@ def test_send_email_returns_false_when_smtp_missing(monkeypatch):
     monkeypatch.delenv("SMTP_PASSWORD", raising=False)
 
     assert send_markdown_file_via_email(markdown_path=markdown, title="AUV 情报摘要") is False
+
+
+def test_email_message_omits_missing_json_path():
+    markdown = Path("tests/.tmp/email/latest-no-json.zh.md")
+    json_path = Path("tests/.tmp/email/latest-no-json.zh.json")
+    markdown.parent.mkdir(parents=True, exist_ok=True)
+    markdown.write_text("# AUV Digest", encoding="utf-8")
+    if json_path.exists():
+        json_path.unlink()
+
+    message = build_email_message(
+        title="AUV Digest",
+        markdown="# AUV Digest",
+        markdown_path=markdown,
+        json_path=json_path,
+        html_path=None,
+        email_from="sender@example.test",
+        email_to="receiver@example.test",
+    )
+
+    body = message.get_content()
+    assert f"Markdown: {markdown}" in body
+    assert "JSON:" not in body
 
 
 def test_send_email_cli_skips_when_smtp_missing(monkeypatch):
