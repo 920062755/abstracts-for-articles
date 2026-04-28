@@ -1,0 +1,109 @@
+name: Daily AUV Intel Digest
+
+on:
+  schedule:
+    # GitHub cron uses UTC. 00:00 UTC is 08:00 Beijing time.
+    - cron: "0 0 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  digest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      DIGEST_SUMMARIZER: ${{ vars.DIGEST_SUMMARIZER || 'noop' }}
+      AUV_INTEL_LLM_BASE_URL: ${{ vars.AUV_INTEL_LLM_BASE_URL || 'https://api.siliconflow.cn/v1' }}
+      AUV_INTEL_LLM_MODEL: ${{ vars.AUV_INTEL_LLM_MODEL || 'Qwen/Qwen2.5-7B-Instruct' }}
+      AUV_INTEL_LLM_API_KEY: ${{ secrets.AUV_INTEL_LLM_API_KEY }}
+      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+      EMAIL_ENABLED: ${{ vars.EMAIL_ENABLED || 'true' }}
+      SMTP_HOST: ${{ secrets.SMTP_HOST }}
+      SMTP_PORT: ${{ vars.SMTP_PORT || '465' }}
+      SMTP_USERNAME: ${{ secrets.SMTP_USERNAME }}
+      SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD }}
+      EMAIL_FROM: ${{ secrets.EMAIL_FROM }}
+      EMAIL_TO: ${{ vars.EMAIL_TO || '920062755@qq.com' }}
+      EMAIL_USE_SSL: ${{ vars.EMAIL_USE_SSL || 'true' }}
+      STATE_CACHE_KEY: auv-intel-state-${{ github.ref_name }}-${{ github.run_id }}
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install package
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e ".[dev]"
+
+      - name: Verify package and tests
+        run: |
+          python -m compileall auv_intel_digest tests
+          python -m pytest -q -p no:cacheprovider
+
+      - name: Restore scheduled digest state
+        uses: actions/cache@v4
+        with:
+          path: .auv_intel_digest
+          key: ${{ env.STATE_CACHE_KEY }}
+          restore-keys: |
+            auv-intel-state-${{ github.ref_name }}-
+
+      - name: Prepare runtime directories
+        run: mkdir -p digests .auv_intel_digest
+
+      - name: Deployment check
+        run: python -m auv_intel_digest deployment-check
+
+      - name: Check RSS/Atom sources
+        run: python -m auv_intel_digest check-sources --sources examples/sources.example.json --timeout 20
+
+      - name: Generate Chinese digest
+        id: collect
+        shell: bash
+        run: |
+          set +e
+          SUMMARIZER="${DIGEST_SUMMARIZER:-noop}"
+          MODEL="${AUV_INTEL_LLM_MODEL:-Qwen/Qwen2.5-7B-Instruct}"
+          python -m auv_intel_digest collect \
+            --sources examples/sources.example.json \
+            --output digests/latest.zh.md \
+            --limit 30 \
+            --state .auv_intel_digest/state.json \
+            --language zh \
+            --summarizer "${SUMMARIZER}" \
+            --llm-model "${MODEL}" \
+            --fail-on-all-source-errors
+          exit_code=$?
+          echo "COLLECT_EXIT_CODE=${exit_code}" >> "$GITHUB_ENV"
+          echo "exit_code=${exit_code}" >> "$GITHUB_OUTPUT"
+          exit 0
+
+      - name: Upload digest artifact
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: auv-intel-digest-${{ github.run_id }}
+          path: |
+            digests/latest.zh.md
+            .auv_intel_digest/state.json
+          if-no-files-found: warn
+
+      - name: Send email digest
+        if: always() && env.EMAIL_ENABLED == 'true'
+        continue-on-error: true
+        run: |
+          python -m auv_intel_digest send-email \
+            --markdown digests/latest.zh.md \
+            --title "AUV 情报摘要"
+
+      - name: Fail workflow when all sources failed
+        if: always() && env.COLLECT_EXIT_CODE != '' && env.COLLECT_EXIT_CODE != '0'
+        run: exit "${COLLECT_EXIT_CODE}"

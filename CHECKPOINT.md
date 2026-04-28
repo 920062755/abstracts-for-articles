@@ -251,3 +251,47 @@ $env:AUV_INTEL_LLM_MODEL="your_model_name"
 - 不依赖真实网络；
 - 不依赖真实 LLM API；
 - OpenAI 相关测试使用 mock response 或缺 key fallback。
+## v0.6.0 email delivery + SiliconFlow/OpenAI-compatible summarizer MVP
+
+当前新增能力：
+
+- 新增 SMTP Email notifier：`auv_intel_digest/notifiers/email.py`。
+- 新增 CLI：`python -m auv_intel_digest send-email --markdown digests/latest.zh.md --title "AUV 情报摘要"`。
+- 默认收件人配置为 `EMAIL_TO=920062755@qq.com`。
+- 支持 QQ 邮箱 SMTP，推荐配置：
+  - `SMTP_HOST=smtp.qq.com`
+  - `SMTP_PORT=465`
+  - `SMTP_USERNAME=920062755@qq.com`
+  - `SMTP_PASSWORD=<QQ邮箱授权码>`
+  - `EMAIL_FROM=920062755@qq.com`
+  - `EMAIL_TO=920062755@qq.com`
+  - `EMAIL_USE_SSL=true`
+- 新增 OpenAI-compatible summarizer：`auv_intel_digest/summarizers/openai_compatible.py`。
+- SiliconFlow 通过以下配置启用：
+  - `DIGEST_SUMMARIZER=siliconflow`
+  - `AUV_INTEL_LLM_BASE_URL=https://api.siliconflow.cn/v1`
+  - `AUV_INTEL_LLM_API_KEY=<secret>`
+  - `AUV_INTEL_LLM_MODEL=<model>`
+- 新增 GitHub Actions workflow：
+  - `.github/workflows/daily-digest.yml`
+  - UTC 00:00 / 北京时间 08:00 运行；
+  - 支持 `workflow_dispatch` 手动触发；
+  - 运行 compileall、pytest、deployment-check、check-sources；
+  - 生成 `digests/latest.zh.md`；
+  - 上传 `digests/latest.zh.md` 和 `.auv_intel_digest/state.json` artifact；
+  - 使用 `actions/cache@v4` 缓存 `.auv_intel_digest/`；
+  - `EMAIL_ENABLED=true` 时执行 `send-email`。
+
+安全约束：
+
+- SMTP 密码必须使用 QQ 邮箱授权码，放在 GitHub Secrets 或环境变量中。
+- 不在代码、README 示例真实值、state 或日志中写入 API key、SMTP 密码。
+- `deployment-check` 只输出 present/missing，不打印 secret 值。
+- SMTP、SiliconFlow/OpenAI、RSS 网络相关测试均使用 mock。
+
+当前限制：
+
+- Email 使用纯文本邮件，不上传附件。
+- Telegram 保留后续扩展空间，但不是默认推送方式。
+- QQ OneBot 仍适合本地或公网 OneBot endpoint，不适合默认 GitHub Actions 云端推送。
+- GitHub Actions state 依赖 cache，首次运行或 cache miss 时可能重复输出旧资讯。

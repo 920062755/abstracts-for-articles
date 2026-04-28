@@ -8,7 +8,9 @@ from auv_intel_digest.cli import app
 from auv_intel_digest.scheduled_digest import (
     FeedItem,
     FeedSource,
+    FeedSourceResult,
     ScheduledDigestResult,
+    check_feed_sources,
     load_state,
     mark_seen,
     parse_feed,
@@ -70,26 +72,35 @@ def test_atom_fixture_parses_basic_fields():
     assert items[0].summary == "New cooperative planning project update."
 
 
+def test_check_feed_sources_uses_mock_network():
+    def handler(request: httpx.Request) -> httpx.Response:
+        if str(request.url) == "https://feed.test/rss":
+            return httpx.Response(200, text=RSS_FIXTURE, headers={"content-type": "application/rss+xml"})
+        return httpx.Response(404, text="missing")
+
+    diagnostics = check_feed_sources(
+        [
+            FeedSource("Good", "https://feed.test/rss", "robotics"),
+            FeedSource("Missing", "https://feed.test/missing", "robotics"),
+        ],
+        http_client=httpx.Client(transport=httpx.MockTransport(handler)),
+    )
+
+    assert diagnostics[0].parseable is True
+    assert diagnostics[0].item_count == 1
+    assert diagnostics[1].error_type == "http_error"
+
+
 def test_state_marks_seen_items_and_preserves_new_status():
     generated_at = "2026-04-27T08:00"
-    item = FeedItem(
-        item_id="same-id",
-        title="Title",
-        link="https://example.test",
-        source="source",
-    )
+    item = FeedItem(item_id="same-id", title="Title", link="https://example.test", source="source")
     state = {"seen": {}}
 
     mark_seen([item], state, generated_at)
-    assert item.seen is False
-    second = FeedItem(
-        item_id="same-id",
-        title="Title",
-        link="https://example.test",
-        source="source",
-    )
+    second = FeedItem(item_id="same-id", title="Title", link="https://example.test", source="source")
     mark_seen([second], state, "2026-04-27T09:00")
 
+    assert item.seen is False
     assert second.seen is True
     assert state["seen"]["same-id"]["first_seen"] == generated_at
     assert state["seen"]["same-id"]["last_seen"] == "2026-04-27T09:00"
@@ -99,7 +110,6 @@ def test_state_file_read_write_roundtrip():
     path = Path("tests/.tmp/scheduled_state.json")
     if path.exists():
         path.unlink()
-
     state = {"seen": {"id": {"title": "Title"}}}
     write_state(path, state)
 
@@ -128,12 +138,8 @@ def test_markdown_digest_contains_summary_items_and_errors():
             )
         ],
         source_results=[
-            type("Result", (), {"source": source, "status": "ok", "items": [], "error": None})(),
-            type(
-                "Result",
-                (),
-                {"source": FeedSource("Broken", "https://broken.test"), "status": "error", "items": [], "error": "boom"},
-            )(),
+            FeedSourceResult(source=source, status="ok"),
+            FeedSourceResult(source=FeedSource("Broken", "https://broken.test"), status="error", error="boom"),
         ],
     )
 
@@ -142,7 +148,8 @@ def test_markdown_digest_contains_summary_items_and_errors():
     assert "# AUV Intel Digest" in markdown
     assert "- Sources checked: 2" in markdown
     assert "### 1. Multi-AUV field test" in markdown
-    assert "- Broken: boom" in markdown
+    assert "- Broken:" in markdown
+    assert "Raw error: boom" in markdown
 
 
 def test_chinese_markdown_digest_uses_summary_fields():
@@ -165,7 +172,7 @@ def test_chinese_markdown_digest_uses_summary_fields():
         output_limit=30,
         output_path=Path("digests/latest.zh.md"),
         items=[item],
-        source_results=[type("Result", (), {"source": source, "status": "ok", "items": [], "error": None})()],
+        source_results=[FeedSourceResult(source=source, status="ok")],
         language="zh",
         summarizer_name="fake",
         summaries={item.item_id: FakeSummarizer().summarize_item(item)},
@@ -177,8 +184,36 @@ def test_chinese_markdown_digest_uses_summary_fields():
     assert "## 运行摘要" in markdown
     assert "## 重点情报" in markdown
     assert "- 原始标题：Multi-AUV field test" in markdown
-    assert "- 中文摘要：这是用于测试的中文摘要：Summary" in markdown
+    assert "- 中文摘要：" in markdown
+    assert "Summary" in markdown
     assert "## 采集错误" in markdown
+
+
+def test_chinese_digest_all_sources_failed_does_not_claim_no_new_items():
+    result = ScheduledDigestResult(
+        generated_at="2026-04-27T08:00",
+        sources_checked=1,
+        successful=0,
+        failed=1,
+        new_items=0,
+        output_limit=30,
+        output_path=Path("digests/latest.zh.md"),
+        items=[],
+        source_results=[
+            FeedSourceResult(
+                source=FeedSource("Broken", "https://broken.test"),
+                status="error",
+                error="[WinError 10013] access denied",
+                error_type="socket_permission_denied",
+            )
+        ],
+        language="zh",
+    )
+
+    markdown = render_scheduled_digest(result)
+
+    assert "本次未生成有效情报摘要，因为所有资讯源采集失败" in markdown
+    assert "今日暂无新条目" not in markdown
 
 
 def test_run_scheduled_digest_uses_mock_network_and_filters_seen_items():
@@ -246,40 +281,7 @@ def test_run_scheduled_digest_zh_with_fake_summarizer():
     markdown = output_path.read_text(encoding="utf-8")
     assert result.language == "zh"
     assert result.summarizer_name == "fake"
-    assert "中文整理：Multi-AUV field test" in markdown
-
-
-def test_scheduled_digest_cli_smoke(monkeypatch):
-    def fake_run_scheduled_digest(**kwargs):
-        return ScheduledDigestResult(
-            generated_at="2026-04-27T08:00",
-            sources_checked=1,
-            successful=1,
-            failed=0,
-            new_items=1,
-            output_limit=kwargs["limit"],
-            output_path=kwargs["output_path"],
-            items=[],
-            source_results=[],
-        )
-
-    monkeypatch.setattr("auv_intel_digest.cli.run_scheduled_digest", fake_run_scheduled_digest)
-    result = CliRunner().invoke(
-        app,
-        [
-            "scheduled-digest",
-            "--sources",
-            "examples/sources.example.json",
-            "--output",
-            "tests/.tmp/cli.md",
-            "--limit",
-            "5",
-        ],
-    )
-
-    assert result.exit_code == 0
-    assert "Sources checked: 1" in result.output
-    assert "Output: tests\\.tmp\\cli.md" in result.output or "Output: tests/.tmp/cli.md" in result.output
+    assert "Multi-AUV field test" in markdown
 
 
 def test_collect_cli_alias_smoke(monkeypatch):

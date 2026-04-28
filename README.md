@@ -360,3 +360,142 @@ $env:AUV_INTEL_LLM_MODEL="your_model_name"
 - API key 缺失时会自动回退到 `noop`；
 - 单条摘要失败不会中断整份 digest；
 - 测试使用 fake/mock summarizer，不调用真实 LLM API。
+## v0.6.0 Email delivery + SiliconFlow
+
+本阶段新增云端邮件推送和 OpenAI-compatible LLM 配置。推荐部署方式：
+
+```text
+GitHub Actions -> collect 中文 digest -> upload artifact -> SMTP email
+```
+
+### GitHub Actions
+
+workflow 文件：
+
+```text
+.github/workflows/daily-digest.yml
+```
+
+默认每天北京时间 08:00 运行。GitHub Actions cron 使用 UTC，因此 workflow 中是：
+
+```yaml
+cron: "0 0 * * *"
+```
+
+也可以手动触发：
+
+```text
+GitHub repo -> Actions -> Daily AUV Intel Digest -> Run workflow
+```
+
+workflow 会执行 compileall、pytest、deployment-check、check-sources、中文 collect、artifact upload 和 send-email。
+
+artifact 名称包含 GitHub run id：
+
+```text
+auv-intel-digest-${{ github.run_id }}
+```
+
+artifact 包含：
+
+```text
+digests/latest.zh.md
+.auv_intel_digest/state.json
+```
+
+state 使用 `actions/cache@v4` 缓存 `.auv_intel_digest/`，用于跨运行减少重复旧资讯。首次运行或 cache miss 时可能重复推送旧条目。
+
+### QQ 邮箱 SMTP
+
+QQ 邮箱不能使用登录密码作为 SMTP 密码，需要在 QQ 邮箱中开启 SMTP 并生成“授权码”。
+
+GitHub 路径：
+
+```text
+Settings -> Secrets and variables -> Actions
+```
+
+Secrets：
+
+```text
+SMTP_HOST=smtp.qq.com
+SMTP_USERNAME=920062755@qq.com
+SMTP_PASSWORD=<QQ邮箱授权码>
+EMAIL_FROM=920062755@qq.com
+AUV_INTEL_LLM_API_KEY=<SiliconFlow API key，可选>
+OPENAI_API_KEY=<OpenAI API key，可选>
+```
+
+Variables：
+
+```text
+EMAIL_ENABLED=true
+SMTP_PORT=465
+EMAIL_TO=920062755@qq.com
+EMAIL_USE_SSL=true
+DIGEST_SUMMARIZER=noop
+AUV_INTEL_LLM_BASE_URL=https://api.siliconflow.cn/v1
+AUV_INTEL_LLM_MODEL=Qwen/Qwen2.5-7B-Instruct
+```
+
+启用 SiliconFlow 摘要时，把变量改为：
+
+```text
+DIGEST_SUMMARIZER=siliconflow
+```
+
+并配置 Secret：
+
+```text
+AUV_INTEL_LLM_API_KEY
+```
+
+### 本地测试
+
+只生成中文 digest：
+
+```powershell
+.\.venv\Scripts\python.exe -m auv_intel_digest collect --sources examples\sources.example.json --output digests\latest.zh.md --limit 30 --language zh --summarizer noop --fail-on-all-source-errors
+```
+
+发送邮件：
+
+```powershell
+$env:SMTP_HOST="smtp.qq.com"
+$env:SMTP_PORT="465"
+$env:SMTP_USERNAME="920062755@qq.com"
+$env:SMTP_PASSWORD="你的QQ邮箱授权码"
+$env:EMAIL_FROM="920062755@qq.com"
+$env:EMAIL_TO="920062755@qq.com"
+
+.\.venv\Scripts\python.exe -m auv_intel_digest send-email --markdown digests\latest.zh.md --title "AUV 情报摘要"
+```
+
+部署核验：
+
+```powershell
+.\.venv\Scripts\python.exe -m auv_intel_digest deployment-check
+```
+
+该命令只显示 secret 是否 present/missing，不打印 secret 值。
+
+### SiliconFlow / OpenAI-compatible
+
+OpenAI-compatible summarizer 支持 SiliconFlow：
+
+```powershell
+$env:AUV_INTEL_LLM_BASE_URL="https://api.siliconflow.cn/v1"
+$env:AUV_INTEL_LLM_API_KEY="your_api_key"
+$env:AUV_INTEL_LLM_MODEL="Qwen/Qwen2.5-7B-Instruct"
+
+.\.venv\Scripts\python.exe -m auv_intel_digest collect --sources examples\sources.example.json --output digests\latest.zh.md --limit 30 --language zh --summarizer siliconflow
+```
+
+没有 API key 时会回退 noop，不影响 digest 生成。
+
+### 当前限制
+
+- Email 使用纯文本邮件，不上传附件；
+- QQ 推送仍保留本地 OneBot 路线，但不作为云端默认推送；
+- Telegram 不作为默认推送方式；
+- SMTP、SiliconFlow、OpenAI、RSS 测试均使用 mock，不依赖真实外部服务。
