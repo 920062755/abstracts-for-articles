@@ -18,6 +18,7 @@ from auv_intel_digest.scheduled_digest import (
     mark_seen,
     parse_feed,
     render_scheduled_digest,
+    score_feed_item,
     run_scheduled_digest,
     run_status_zh,
     write_state,
@@ -351,6 +352,72 @@ def test_run_scheduled_digest_uses_mock_network_and_filters_seen_items():
     assert second.new_items == 0
     assert len(second.items) == 0
     assert output_path.exists()
+
+
+def test_run_scheduled_digest_ranks_more_relevant_items_before_newer_general_items():
+    feed = """<?xml version="1.0"?>
+<rss version="2.0">
+  <channel>
+    <title>Mixed Robotics Feed</title>
+    <item>
+      <title>Humanoid warehouse robotics update</title>
+      <link>https://example.test/general</link>
+      <guid>general</guid>
+      <pubDate>Tue, 28 Apr 2026 08:00:00 +0800</pubDate>
+      <description>General robotics industry news.</description>
+    </item>
+    <item>
+      <title>Multi-AUV cooperative target tracking field trial</title>
+      <link>https://example.test/auv</link>
+      <guid>auv</guid>
+      <pubDate>Mon, 27 Apr 2026 08:00:00 +0800</pubDate>
+      <description>Autonomous underwater vehicle cooperation and cooperative tracking.</description>
+    </item>
+  </channel>
+</rss>
+"""
+    sources_path = Path("tests/.tmp/relevance_sources.json")
+    output_path = Path("tests/.tmp/relevance.md")
+    state_path = Path("tests/.tmp/relevance_state.json")
+    for path in (sources_path, output_path, state_path):
+        if path.exists():
+            path.unlink()
+    sources_path.write_text(
+        json.dumps({"sources": [{"name": "Mixed", "url": "https://feed.test/rss"}]}),
+        encoding="utf-8",
+    )
+    client = httpx.Client(transport=httpx.MockTransport(lambda request: httpx.Response(200, text=feed)))
+
+    result = run_scheduled_digest(
+        sources_path=sources_path,
+        output_path=output_path,
+        limit=1,
+        state_path=state_path,
+        http_client=client,
+    )
+
+    assert len(result.items) == 1
+    assert result.items[0].title == "Multi-AUV cooperative target tracking field trial"
+    assert result.items[0].relevance_score > 0
+
+
+def test_score_feed_item_penalizes_general_non_underwater_robotics():
+    relevant = FeedItem(
+        item_id="auv",
+        title="Multi-AUV cooperative planning",
+        link="https://example.test/auv",
+        source="source",
+        summary="Autonomous underwater vehicle task allocation.",
+    )
+    general = FeedItem(
+        item_id="humanoid",
+        title="Humanoid robot update",
+        link="https://example.test/general",
+        source="source",
+        summary="General robotics update.",
+    )
+
+    assert score_feed_item(relevant) > score_feed_item(general)
 
 
 def test_run_scheduled_digest_zh_with_fake_summarizer():

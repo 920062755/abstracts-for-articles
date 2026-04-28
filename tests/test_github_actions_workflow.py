@@ -26,6 +26,7 @@ def test_daily_digest_workflow_runs_checks_and_collect():
     assert "python -m auv_intel_digest check-sources" in text
     assert "python -m auv_intel_digest collect" in text
     assert "--language zh" in text
+    assert "--limit 10" in text
     assert "--fail-on-all-source-errors" in text
 
 

@@ -34,6 +34,51 @@ class FeedItem:
     guid: str | None = None
     category: str | None = None
     seen: bool = False
+    relevance_score: int = 0
+
+
+RELEVANCE_KEYWORDS: tuple[tuple[str, int], ...] = (
+    ("multi-auv", 8),
+    ("multi auv", 8),
+    ("multi-uuv", 8),
+    ("multi uuv", 8),
+    ("autonomous underwater vehicle", 8),
+    ("unmanned underwater vehicle", 8),
+    ("underwater vehicle", 5),
+    ("underwater robot", 5),
+    ("auv", 5),
+    ("uuv", 5),
+    ("pursuit-evasion", 7),
+    ("pursuit evasion", 7),
+    ("encirclement", 6),
+    ("cooperative pursuit", 6),
+    ("target tracking", 6),
+    ("cooperative tracking", 6),
+    ("multi-agent planning", 6),
+    ("cooperative planning", 6),
+    ("task allocation", 5),
+    ("path planning", 4),
+    ("multi-agent", 4),
+    ("multi-robot", 4),
+    ("distributed planning", 4),
+    ("formation control", 4),
+    ("game theory", 5),
+    ("markov game", 5),
+    ("differential game", 5),
+    ("stochastic game", 5),
+    ("cooperative", 2),
+    ("distributed", 2),
+    ("swarm", 2),
+)
+
+NEGATIVE_RELEVANCE_KEYWORDS: tuple[tuple[str, int], ...] = (
+    ("uav", 4),
+    ("drone", 3),
+    ("aerial", 3),
+    ("ground vehicle", 3),
+    ("self-driving car", 3),
+    ("humanoid", 2),
+)
 
 
 @dataclass
@@ -237,6 +282,32 @@ def mark_seen(items: list[FeedItem], state: dict[str, Any], generated_at: str) -
             previous["last_seen"] = generated_at
 
 
+def score_feed_item(item: FeedItem) -> int:
+    text = " ".join(
+        part
+        for part in [item.title, item.summary, item.category, item.source]
+        if part
+    ).casefold()
+    score = 0
+    for keyword, weight in RELEVANCE_KEYWORDS:
+        if keyword in text:
+            score += weight
+    for keyword, weight in NEGATIVE_RELEVANCE_KEYWORDS:
+        if keyword in text:
+            score -= weight
+    return max(score, 0)
+
+
+def rank_feed_items(items: list[FeedItem]) -> list[FeedItem]:
+    for item in items:
+        item.relevance_score = score_feed_item(item)
+    return sorted(
+        items,
+        key=lambda item: (item.relevance_score, item.published or ""),
+        reverse=True,
+    )
+
+
 def render_scheduled_digest(result: ScheduledDigestResult) -> str:
     if result.language == "zh":
         return _render_scheduled_digest_zh(result)
@@ -433,7 +504,7 @@ def run_scheduled_digest(
         write_state(state_path, state)
         selected = all_items if include_seen else [item for item in all_items if not item.seen]
         new_items = sum(1 for item in all_items if not item.seen)
-    selected = sorted(selected, key=lambda item: item.published or "", reverse=True)[:limit]
+    selected = rank_feed_items(selected)[:limit]
     selected_summarizer = summarizer or build_summarizer(summarizer_name, llm_model=llm_model)
     summaries: dict[str, SummaryResult] = {}
     summary_warnings = list(getattr(selected_summarizer, "warnings", []))

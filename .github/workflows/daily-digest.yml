@@ -81,7 +81,7 @@ jobs:
           python -m auv_intel_digest collect \
             --sources examples/sources.example.json \
             --output digests/latest.zh.md \
-            --limit 30 \
+            --limit 10 \
             --state .auv_intel_digest/state.json \
             --language zh \
             --summarizer "${SUMMARIZER}" \
