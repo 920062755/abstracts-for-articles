@@ -8,6 +8,7 @@ from typing import Optional
 
 import typer
 
+from auv_intel_digest.notifiers.email import send_markdown_file_via_email
 from auv_intel_digest.notifiers.telegram import send_markdown_file_via_telegram
 from auv_intel_digest.pipeline import run_digest
 from auv_intel_digest.scheduled_digest import (
@@ -80,39 +81,15 @@ def _run_collect_command(
 
 @app.command("collect")
 def collect(
-    sources: Path = typer.Option(
-        Path("examples/sources.example.json"),
-        "--sources",
-        help="JSON file containing RSS/Atom sources.",
-    ),
-    output: Path = typer.Option(
-        Path("digests/latest.md"),
-        "--output",
-        help="Markdown digest output path.",
-    ),
-    limit: int = typer.Option(30, "--limit", min=1, help="Maximum items to write."),
-    include_seen: bool = typer.Option(
-        False,
-        "--include-seen",
-        help="Include items already recorded in the local state file.",
-    ),
-    state: Path = typer.Option(
-        Path(".auv_intel_digest/state.json"),
-        "--state",
-        help="Local JSON state file used to avoid repeated items.",
-    ),
-    language: str = typer.Option("en", "--language", help="Digest language: en or zh."),
-    summarizer: str = typer.Option("noop", "--summarizer", help="Summarizer: noop or openai."),
-    llm_model: Optional[str] = typer.Option(
-        None,
-        "--llm-model",
-        help="Optional LLM model name. Defaults to AUV_INTEL_LLM_MODEL for OpenAI.",
-    ),
-    fail_on_all_source_errors: bool = typer.Option(
-        False,
-        "--fail-on-all-source-errors",
-        help="Exit with code 2 when every enabled source fails. Digest is still written.",
-    ),
+    sources: Path = typer.Option(Path("examples/sources.example.json"), "--sources"),
+    output: Path = typer.Option(Path("digests/latest.md"), "--output"),
+    limit: int = typer.Option(30, "--limit", min=1),
+    include_seen: bool = typer.Option(False, "--include-seen"),
+    state: Path = typer.Option(Path(".auv_intel_digest/state.json"), "--state"),
+    language: str = typer.Option("en", "--language"),
+    summarizer: str = typer.Option("noop", "--summarizer"),
+    llm_model: Optional[str] = typer.Option(None, "--llm-model"),
+    fail_on_all_source_errors: bool = typer.Option(False, "--fail-on-all-source-errors"),
 ) -> None:
     _run_collect_command(
         sources=sources,
@@ -129,39 +106,15 @@ def collect(
 
 @app.command("scheduled-digest")
 def scheduled_digest(
-    sources: Path = typer.Option(
-        Path("examples/sources.example.json"),
-        "--sources",
-        help="JSON file containing RSS/Atom sources.",
-    ),
-    output: Path = typer.Option(
-        Path("digests/latest.md"),
-        "--output",
-        help="Markdown digest output path.",
-    ),
-    limit: int = typer.Option(30, "--limit", min=1, help="Maximum items to write."),
-    include_seen: bool = typer.Option(
-        False,
-        "--include-seen",
-        help="Include items already recorded in the local state file.",
-    ),
-    state: Path = typer.Option(
-        Path(".auv_intel_digest/state.json"),
-        "--state",
-        help="Local JSON state file used to avoid repeated items.",
-    ),
-    language: str = typer.Option("en", "--language", help="Digest language: en or zh."),
-    summarizer: str = typer.Option("noop", "--summarizer", help="Summarizer: noop or openai."),
-    llm_model: Optional[str] = typer.Option(
-        None,
-        "--llm-model",
-        help="Optional LLM model name. Defaults to AUV_INTEL_LLM_MODEL for OpenAI.",
-    ),
-    fail_on_all_source_errors: bool = typer.Option(
-        False,
-        "--fail-on-all-source-errors",
-        help="Exit with code 2 when every enabled source fails. Digest is still written.",
-    ),
+    sources: Path = typer.Option(Path("examples/sources.example.json"), "--sources"),
+    output: Path = typer.Option(Path("digests/latest.md"), "--output"),
+    limit: int = typer.Option(30, "--limit", min=1),
+    include_seen: bool = typer.Option(False, "--include-seen"),
+    state: Path = typer.Option(Path(".auv_intel_digest/state.json"), "--state"),
+    language: str = typer.Option("en", "--language"),
+    summarizer: str = typer.Option("noop", "--summarizer"),
+    llm_model: Optional[str] = typer.Option(None, "--llm-model"),
+    fail_on_all_source_errors: bool = typer.Option(False, "--fail-on-all-source-errors"),
 ) -> None:
     _run_collect_command(
         sources=sources,
@@ -178,18 +131,10 @@ def scheduled_digest(
 
 @app.command("check-sources")
 def check_sources(
-    sources: Path = typer.Option(
-        Path("examples/sources.example.json"),
-        "--sources",
-        help="JSON file containing RSS/Atom sources.",
-    ),
-    timeout: float = typer.Option(20.0, "--timeout", help="HTTP timeout in seconds."),
+    sources: Path = typer.Option(Path("examples/sources.example.json"), "--sources"),
+    timeout: float = typer.Option(20.0, "--timeout"),
 ) -> None:
-    diagnostics = check_feed_sources(
-        load_feed_sources(sources),
-        timeout=timeout,
-        user_agent="auv_intel_digest/0.4 check-sources",
-    )
+    diagnostics = check_feed_sources(load_feed_sources(sources), timeout=timeout)
     for diagnostic in diagnostics:
         typer.echo(f"Name: {diagnostic.name}")
         typer.echo(f"URL: {diagnostic.url}")
@@ -204,7 +149,6 @@ def check_sources(
         typer.echo(f"Error message: {diagnostic.error_message or ''}")
         typer.echo(f"Diagnostic: {diagnostic.diagnostic or ''}")
         typer.echo("")
-
     successful = sum(1 for item in diagnostics if item.enabled and item.parseable)
     failed = sum(1 for item in diagnostics if item.enabled and item.error_type)
     typer.echo(f"Checked: {len(diagnostics)}")
@@ -212,29 +156,32 @@ def check_sources(
     typer.echo(f"Failed: {failed}")
 
 
+@app.command("send-email")
+def send_email(
+    markdown: Path = typer.Option(Path("digests/latest.zh.md"), "--markdown"),
+    title: str = typer.Option("AUV 情报摘要", "--title"),
+    json_path: Optional[Path] = typer.Option(None, "--json"),
+    html_path: Optional[Path] = typer.Option(None, "--html"),
+) -> None:
+    sent = send_markdown_file_via_email(
+        markdown_path=markdown,
+        title=title,
+        json_path=json_path,
+        html_path=html_path,
+    )
+    if not sent:
+        typer.echo("Email: skipped because SMTP settings are incomplete.")
+        return
+    typer.echo("Email: sent")
+
+
 @app.command("send-telegram")
 def send_telegram(
-    markdown: Path = typer.Option(
-        Path("digests/latest.zh.md"),
-        "--markdown",
-        help="Markdown digest file to send.",
-    ),
-    title: str = typer.Option("AUV 情报摘要", "--title", help="Telegram message title."),
-    json_path: Optional[Path] = typer.Option(
-        None,
-        "--json",
-        help="Optional JSON digest path shown in the Telegram message.",
-    ),
-    html_path: Optional[Path] = typer.Option(
-        None,
-        "--html",
-        help="Optional HTML digest path shown in the Telegram message.",
-    ),
-    max_chars: Optional[int] = typer.Option(
-        None,
-        "--max-chars",
-        help="Maximum characters per Telegram message chunk. Defaults to TELEGRAM_MAX_CHARS.",
-    ),
+    markdown: Path = typer.Option(Path("digests/latest.zh.md"), "--markdown"),
+    title: str = typer.Option("AUV 情报摘要", "--title"),
+    json_path: Optional[Path] = typer.Option(None, "--json"),
+    html_path: Optional[Path] = typer.Option(None, "--html"),
+    max_chars: Optional[int] = typer.Option(None, "--max-chars"),
 ) -> None:
     chunks = send_markdown_file_via_telegram(
         markdown_path=markdown,
@@ -251,42 +198,18 @@ def send_telegram(
 
 @app.command("deployment-check")
 def deployment_check(
-    sources: Path = typer.Option(
-        Path("examples/sources.example.json"),
-        "--sources",
-        help="JSON file containing RSS/Atom sources.",
-    ),
-    state_dir: Path = typer.Option(
-        Path(".auv_intel_digest"),
-        "--state-dir",
-        help="Directory used for local scheduled digest state.",
-    ),
-    output_dir: Path = typer.Option(
-        Path("digests"),
-        "--output-dir",
-        help="Directory used for generated digest files.",
-    ),
+    sources: Path = typer.Option(Path("examples/sources.example.json"), "--sources"),
+    state_dir: Path = typer.Option(Path(".auv_intel_digest"), "--state-dir"),
+    output_dir: Path = typer.Option(Path("digests"), "--output-dir"),
 ) -> None:
     _run_deployment_check(sources=sources, state_dir=state_dir, output_dir=output_dir)
 
 
 @app.command("doctor")
 def doctor(
-    sources: Path = typer.Option(
-        Path("examples/sources.example.json"),
-        "--sources",
-        help="JSON file containing RSS/Atom sources.",
-    ),
-    state_dir: Path = typer.Option(
-        Path(".auv_intel_digest"),
-        "--state-dir",
-        help="Directory used for local scheduled digest state.",
-    ),
-    output_dir: Path = typer.Option(
-        Path("digests"),
-        "--output-dir",
-        help="Directory used for generated digest files.",
-    ),
+    sources: Path = typer.Option(Path("examples/sources.example.json"), "--sources"),
+    state_dir: Path = typer.Option(Path(".auv_intel_digest"), "--state-dir"),
+    output_dir: Path = typer.Option(Path("digests"), "--output-dir"),
 ) -> None:
     _run_deployment_check(sources=sources, state_dir=state_dir, output_dir=output_dir)
 
@@ -299,20 +222,24 @@ def _run_deployment_check(*, sources: Path, state_dir: Path, output_dir: Path) -
         ("state_dir_writable", "yes" if _ensure_writable_dir(state_dir) else "no"),
         ("output_dir_writable", "yes" if _ensure_writable_dir(output_dir) else "no"),
         ("openai_api_key", "present" if os.getenv("OPENAI_API_KEY") else "missing"),
+        ("auv_intel_llm_api_key", "present" if os.getenv("AUV_INTEL_LLM_API_KEY") else "missing"),
+        ("smtp_host", "present" if os.getenv("SMTP_HOST") else "missing"),
+        ("smtp_username", "present" if os.getenv("SMTP_USERNAME") else "missing"),
+        ("smtp_password", "present" if os.getenv("SMTP_PASSWORD") else "missing"),
+        ("email_to", os.getenv("EMAIL_TO", "920062755@qq.com")),
         ("telegram_bot_token", "present" if os.getenv("TELEGRAM_BOT_TOKEN") else "missing"),
         ("telegram_chat_id", "present" if os.getenv("TELEGRAM_CHAT_ID") else "missing"),
     ]
     for name, value in checks:
         typer.echo(f"{name}: {value}")
-
     typer.echo("next_steps:")
     if not sources.exists():
         typer.echo("- Create or fix the sources JSON file before running collect.")
-    if not os.getenv("TELEGRAM_BOT_TOKEN") or not os.getenv("TELEGRAM_CHAT_ID"):
-        typer.echo("- Configure Telegram secrets to enable delivery; artifact generation still works.")
-    if not os.getenv("OPENAI_API_KEY"):
-        typer.echo("- OPENAI_API_KEY is missing; use noop summarizer or configure the secret.")
-    typer.echo("- Run check-sources, then collect, then send-telegram or GitHub Actions workflow_dispatch.")
+    if not os.getenv("SMTP_HOST") or not os.getenv("SMTP_USERNAME") or not os.getenv("SMTP_PASSWORD"):
+        typer.echo("- Configure SMTP secrets to enable email delivery; artifact generation still works.")
+    if not os.getenv("AUV_INTEL_LLM_API_KEY") and not os.getenv("OPENAI_API_KEY"):
+        typer.echo("- LLM API key is missing; use noop summarizer or configure SiliconFlow/OpenAI-compatible credentials.")
+    typer.echo("- Run check-sources, then collect, then send-email or GitHub Actions workflow_dispatch.")
 
 
 def _ensure_writable_dir(path: Path) -> bool:

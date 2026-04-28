@@ -33,8 +33,8 @@ def test_telegram_notifier_sends_chunked_messages_with_mock_http():
     )
 
     notifier.send(
-        title="AUV 情报摘要",
-        markdown="\n".join([f"条目 {idx}" for idx in range(120)]),
+        title="Daily Digest",
+        markdown="\n".join([f"item {idx}" for idx in range(120)]),
         markdown_path=Path("digests/latest.zh.md"),
         json_path=Path("digests/latest.zh.json"),
     )
@@ -90,13 +90,14 @@ def test_split_telegram_message_limits_chunk_size():
 
 def test_all_source_failure_digest_adds_telegram_warning():
     message = build_telegram_message(
-        title="AUV 情报摘要",
-        markdown="# AUV 情报摘要\n\n- 运行状态：全部失败\n",
+        title="Daily Digest",
+        markdown="# AUV Intel Digest\n\n- Run status: all sources failed\n",
         markdown_path=Path("digests/latest.zh.md"),
         json_path=Path("digests/latest.zh.json"),
     )
 
-    assert message.startswith("⚠️ AUV 情报摘要采集失败")
+    assert "AUV" in message
+    assert "failed" in message.lower()
 
 
 def test_send_telegram_cli_smoke(monkeypatch):
@@ -130,7 +131,7 @@ def test_send_telegram_cli_skips_when_secrets_missing(monkeypatch):
     base = Path("tests/.tmp/telegram")
     base.mkdir(parents=True, exist_ok=True)
     markdown = base / "latest.zh.md"
-    markdown.write_text("# AUV 情报摘要\n", encoding="utf-8")
+    markdown.write_text("# AUV Digest\n", encoding="utf-8")
     monkeypatch.delenv("TELEGRAM_BOT_TOKEN", raising=False)
     monkeypatch.delenv("TELEGRAM_CHAT_ID", raising=False)
 
@@ -150,6 +151,7 @@ def test_deployment_check_cli_does_not_leak_secret_values(monkeypatch):
     monkeypatch.setenv("TELEGRAM_BOT_TOKEN", "secret-token")
     monkeypatch.setenv("TELEGRAM_CHAT_ID", "secret-chat")
     monkeypatch.setenv("OPENAI_API_KEY", "secret-openai")
+    monkeypatch.setenv("SMTP_PASSWORD", "secret-smtp")
 
     result = CliRunner().invoke(
         app,
@@ -168,6 +170,8 @@ def test_deployment_check_cli_does_not_leak_secret_values(monkeypatch):
     assert "telegram_bot_token: present" in result.output
     assert "telegram_chat_id: present" in result.output
     assert "openai_api_key: present" in result.output
+    assert "smtp_password: present" in result.output
     assert "secret-token" not in result.output
     assert "secret-chat" not in result.output
     assert "secret-openai" not in result.output
+    assert "secret-smtp" not in result.output

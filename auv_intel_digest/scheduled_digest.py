@@ -82,17 +82,15 @@ class SourceDiagnostic:
 def load_feed_sources(path: str | Path) -> list[FeedSource]:
     data = json.loads(Path(path).read_text(encoding="utf-8"))
     sources_data = data.get("sources", data if isinstance(data, list) else [])
-    sources = []
-    for entry in sources_data:
-        sources.append(
-            FeedSource(
-                name=entry["name"],
-                url=entry["url"],
-                category=entry.get("category"),
-                enabled=bool(entry.get("enabled", True)),
-            )
+    return [
+        FeedSource(
+            name=entry["name"],
+            url=entry["url"],
+            category=entry.get("category"),
+            enabled=bool(entry.get("enabled", True)),
         )
-    return sources
+        for entry in sources_data
+    ]
 
 
 def stable_item_id(*, link: str, guid: str | None, title: str) -> str:
@@ -114,15 +112,14 @@ def collect_feed_sources(
     sources: list[FeedSource],
     *,
     timeout: float = 20,
-    user_agent: str = "auv_intel_digest/0.4",
+    user_agent: str = "auv_intel_digest/0.6",
     http_client: httpx.Client | None = None,
 ) -> list[FeedSourceResult]:
-    enabled_sources = [source for source in sources if source.enabled]
     results: list[FeedSourceResult] = []
     client = http_client or httpx.Client(timeout=timeout, headers={"User-Agent": user_agent})
     close_client = http_client is None
     try:
-        for source in enabled_sources:
+        for source in [source for source in sources if source.enabled]:
             try:
                 response = client.get(source.url)
                 response.raise_for_status()
@@ -149,7 +146,7 @@ def check_feed_sources(
     sources: list[FeedSource],
     *,
     timeout: float = 20,
-    user_agent: str = "auv_intel_digest/0.4 check-sources",
+    user_agent: str = "auv_intel_digest/0.6 check-sources",
     http_client: httpx.Client | None = None,
 ) -> list[SourceDiagnostic]:
     diagnostics: list[SourceDiagnostic] = []
@@ -307,17 +304,7 @@ def _render_scheduled_digest_en(result: ScheduledDigestResult) -> str:
                 "",
             ]
         )
-
-    errors = [source for source in result.source_results if source.status != "ok"]
-    lines.extend(["## Source Errors", ""])
-    if not errors:
-        lines.extend(["None.", ""])
-    for error in errors:
-        lines.append(f"- {error.source.name}:")
-        lines.append(f"  - Error type: {error.error_type or 'unknown_error'}")
-        lines.append(f"  - Raw error: {error.error or 'Unknown error'}")
-        if error.diagnostic:
-            lines.append(f"  - Explanation: {error.diagnostic}")
+    _append_source_errors_en(lines, result)
     return "\n".join(lines).rstrip() + "\n"
 
 
@@ -343,7 +330,6 @@ def _render_scheduled_digest_zh(result: ScheduledDigestResult) -> str:
         for warning in result.summary_warnings:
             lines.append(f"- {warning}")
         lines.append("")
-
     lines.extend(["## 重点情报", ""])
     if not result.items:
         if all_sources_failed(result):
@@ -379,7 +365,24 @@ def _render_scheduled_digest_zh(result: ScheduledDigestResult) -> str:
                 "",
             ]
         )
+    _append_source_errors_zh(lines, result)
+    return "\n".join(lines).rstrip() + "\n"
 
+
+def _append_source_errors_en(lines: list[str], result: ScheduledDigestResult) -> None:
+    errors = [source for source in result.source_results if source.status != "ok"]
+    lines.extend(["## Source Errors", ""])
+    if not errors:
+        lines.extend(["None.", ""])
+    for error in errors:
+        lines.append(f"- {error.source.name}:")
+        lines.append(f"  - Error type: {error.error_type or 'unknown_error'}")
+        lines.append(f"  - Raw error: {error.error or 'Unknown error'}")
+        if error.diagnostic:
+            lines.append(f"  - Explanation: {error.diagnostic}")
+
+
+def _append_source_errors_zh(lines: list[str], result: ScheduledDigestResult) -> None:
     errors = [source for source in result.source_results if source.status != "ok"]
     lines.extend(["## 采集错误", ""])
     if not errors:
@@ -390,7 +393,6 @@ def _render_scheduled_digest_zh(result: ScheduledDigestResult) -> str:
         lines.append(f"  - 原始错误：{error.error or '未知错误'}")
         if error.diagnostic:
             lines.append(f"  - 说明：{error.diagnostic}")
-    return "\n".join(lines).rstrip() + "\n"
 
 
 def write_scheduled_digest(path: str | Path, markdown: str) -> None:
@@ -422,7 +424,6 @@ def run_scheduled_digest(
     successful = sum(1 for result in source_results if result.status == "ok")
     failed = sum(1 for result in source_results if result.status != "ok")
     all_failed = sources_checked > 0 and successful == 0 and failed > 0
-
     if all_failed:
         selected: list[FeedItem] = []
         new_items = 0
@@ -432,7 +433,6 @@ def run_scheduled_digest(
         write_state(state_path, state)
         selected = all_items if include_seen else [item for item in all_items if not item.seen]
         new_items = sum(1 for item in all_items if not item.seen)
-
     selected = sorted(selected, key=lambda item: item.published or "", reverse=True)[:limit]
     selected_summarizer = summarizer or build_summarizer(summarizer_name, llm_model=llm_model)
     summaries: dict[str, SummaryResult] = {}
@@ -443,7 +443,6 @@ def run_scheduled_digest(
             summaries[item.item_id] = summary
             if summary.warning:
                 summary_warnings.append(summary.warning)
-
     result = ScheduledDigestResult(
         generated_at=generated_at,
         sources_checked=sources_checked,
@@ -560,7 +559,7 @@ def classify_collection_error(exc: Exception) -> str:
     lowered = message.lower()
     if isinstance(exc, httpx.HTTPStatusError):
         return "http_error"
-    if isinstance(exc, httpx.TimeoutException) or "timed out" in lowered or "timeout" in lowered:
+    if isinstance(exc, httpx.TimeoutException) or "timeout" in lowered or "timed out" in lowered:
         return "timeout"
     if isinstance(exc, httpx.ConnectError) and (
         "name or service not known" in lowered
@@ -582,7 +581,7 @@ def diagnose_collection_error(exc: Exception) -> str:
     lowered = message.lower()
     if "10013" in message or "permission" in lowered or "access" in lowered:
         return "当前运行环境不允许 Python 建立该网络连接。可能原因包括 Windows 防火墙、杀毒软件、代理、沙箱网络限制或系统权限策略。"
-    if "timed out" in lowered or "timeout" in lowered:
+    if "timeout" in lowered or "timed out" in lowered:
         return "网络请求超时，请检查网络连通性、代理配置或 RSS 源响应速度。"
     if "name or service not known" in lowered or "nodename nor servname" in lowered:
         return "DNS 解析失败，请检查网络、代理或 RSS URL 域名。"

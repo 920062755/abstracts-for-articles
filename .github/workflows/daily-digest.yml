@@ -2,9 +2,12 @@ name: Daily AUV Intel Digest
 
 on:
   schedule:
-    # 08:00 Beijing time is 00:00 UTC.
+    # GitHub cron uses UTC. 00:00 UTC is 08:00 Beijing time.
     - cron: "0 0 * * *"
   workflow_dispatch:
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 permissions:
   contents: read
@@ -14,12 +17,19 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     env:
-      AUV_INTEL_LLM_MODEL: ${{ vars.AUV_INTEL_LLM_MODEL || 'gpt-4o-mini' }}
       DIGEST_SUMMARIZER: ${{ vars.DIGEST_SUMMARIZER || 'noop' }}
+      AUV_INTEL_LLM_BASE_URL: ${{ vars.AUV_INTEL_LLM_BASE_URL || 'https://api.siliconflow.cn/v1' }}
+      AUV_INTEL_LLM_MODEL: ${{ vars.AUV_INTEL_LLM_MODEL || 'Qwen/Qwen2.5-7B-Instruct' }}
+      AUV_INTEL_LLM_API_KEY: ${{ secrets.AUV_INTEL_LLM_API_KEY }}
       OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-      TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-      TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-      TELEGRAM_MAX_CHARS: ${{ vars.TELEGRAM_MAX_CHARS || '3800' }}
+      EMAIL_ENABLED: ${{ vars.EMAIL_ENABLED || 'true' }}
+      SMTP_HOST: ${{ secrets.SMTP_HOST }}
+      SMTP_PORT: ${{ vars.SMTP_PORT || '465' }}
+      SMTP_USERNAME: ${{ secrets.SMTP_USERNAME }}
+      SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD }}
+      EMAIL_FROM: ${{ secrets.EMAIL_FROM }}
+      EMAIL_TO: ${{ vars.EMAIL_TO || '920062755@qq.com' }}
+      EMAIL_USE_SSL: ${{ vars.EMAIL_USE_SSL || 'true' }}
       STATE_CACHE_KEY: auv-intel-state-${{ github.ref_name }}-${{ github.run_id }}
 
     steps:
@@ -52,6 +62,9 @@ jobs:
       - name: Prepare runtime directories
         run: mkdir -p digests .auv_intel_digest
 
+      - name: Deployment check
+        run: python -m auv_intel_digest deployment-check
+
       - name: Check RSS/Atom sources
         run: python -m auv_intel_digest check-sources --sources examples/sources.example.json --timeout 20
 
@@ -61,7 +74,7 @@ jobs:
         run: |
           set +e
           SUMMARIZER="${DIGEST_SUMMARIZER:-noop}"
-          MODEL="${AUV_INTEL_LLM_MODEL:-gpt-4o-mini}"
+          MODEL="${AUV_INTEL_LLM_MODEL:-Qwen/Qwen2.5-7B-Instruct}"
           python -m auv_intel_digest collect \
             --sources examples/sources.example.json \
             --output digests/latest.zh.md \
@@ -86,14 +99,13 @@ jobs:
             .auv_intel_digest/state.json
           if-no-files-found: warn
 
-      - name: Send Telegram digest
-        if: always()
+      - name: Send email digest
+        if: always() && env.EMAIL_ENABLED == 'true'
         continue-on-error: true
         run: |
-          python -m auv_intel_digest send-telegram \
+          python -m auv_intel_digest send-email \
             --markdown digests/latest.zh.md \
-            --title "AUV 情报摘要" \
-            --max-chars "${TELEGRAM_MAX_CHARS}"
+            --title "AUV 情报摘要"
 
       - name: Fail workflow when all sources failed
         if: always() && env.COLLECT_EXIT_CODE != '' && env.COLLECT_EXIT_CODE != '0'

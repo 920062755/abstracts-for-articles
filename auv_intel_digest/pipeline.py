@@ -10,6 +10,7 @@ from auv_intel_digest.dedupe.deduper import Deduper
 from auv_intel_digest.dedupe.store import SeenStore
 from auv_intel_digest.models import DailyDigest
 from auv_intel_digest.notifiers.composite import CompositeNotifier
+from auv_intel_digest.notifiers.email import EmailNotifier
 from auv_intel_digest.notifiers.file_only import FileOnlyNotifier
 from auv_intel_digest.notifiers.qq_onebot import QQOneBotNotifier
 from auv_intel_digest.notifiers.telegram import TelegramNotifier
@@ -44,6 +45,18 @@ def build_notifier(settings: Settings, digest: DailyDigest) -> CompositeNotifier
                 push_max_chars=settings.qq_push_max_chars,
                 digest=digest,
                 max_items_per_topic=settings.max_items_per_topic,
+            )
+        )
+    if "email" in modes or settings.email_enabled:
+        notifiers.append(
+            EmailNotifier(
+                smtp_host=settings.smtp_host,
+                smtp_port=settings.smtp_port,
+                smtp_username=settings.smtp_username,
+                smtp_password=settings.smtp_password,
+                email_from=settings.email_from,
+                email_to=settings.email_to,
+                use_ssl=settings.email_use_ssl,
             )
         )
     if "telegram" in modes:

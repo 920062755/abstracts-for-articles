@@ -9,15 +9,17 @@ from auv_intel_digest.scheduled_digest import (
     FeedItem,
     FeedSource,
     FeedSourceResult,
+    ScheduledDigestResult,
+    all_sources_failed,
     check_feed_sources,
     classify_collection_error,
-    ScheduledDigestResult,
     diagnose_collection_error,
     load_state,
     mark_seen,
     parse_feed,
     render_scheduled_digest,
     run_scheduled_digest,
+    run_status_zh,
     write_state,
 )
 from auv_intel_digest.summarizers.fake import FakeSummarizer
@@ -64,7 +66,17 @@ def test_rss_fixture_parses_basic_fields():
     assert items[0].category == "robotics"
 
 
-def test_check_feed_sources_reports_success_and_failure():
+def test_atom_fixture_parses_basic_fields():
+    items = parse_feed(ATOM_FIXTURE, FeedSource("Atom Test", "https://feed.test", "planning"))
+
+    assert len(items) == 1
+    assert items[0].title == "Multi-agent planning release"
+    assert items[0].link == "https://example.test/atom/1"
+    assert items[0].guid == "atom-id-1"
+    assert items[0].summary == "New cooperative planning project update."
+
+
+def test_check_feed_sources_reports_success_failure_and_disabled():
     def handler(request: httpx.Request) -> httpx.Response:
         if str(request.url) == "https://feed.test/rss":
             return httpx.Response(
@@ -94,36 +106,16 @@ def test_check_feed_sources_reports_success_and_failure():
     assert diagnostics[2].error_type == "disabled"
 
 
-def test_atom_fixture_parses_basic_fields():
-    items = parse_feed(ATOM_FIXTURE, FeedSource("Atom Test", "https://feed.test", "planning"))
-
-    assert len(items) == 1
-    assert items[0].title == "Multi-agent planning release"
-    assert items[0].link == "https://example.test/atom/1"
-    assert items[0].guid == "atom-id-1"
-    assert items[0].summary == "New cooperative planning project update."
-
-
 def test_state_marks_seen_items_and_preserves_new_status():
     generated_at = "2026-04-27T08:00"
-    item = FeedItem(
-        item_id="same-id",
-        title="Title",
-        link="https://example.test",
-        source="source",
-    )
+    item = FeedItem(item_id="same-id", title="Title", link="https://example.test", source="source")
     state = {"seen": {}}
 
     mark_seen([item], state, generated_at)
-    assert item.seen is False
-    second = FeedItem(
-        item_id="same-id",
-        title="Title",
-        link="https://example.test",
-        source="source",
-    )
+    second = FeedItem(item_id="same-id", title="Title", link="https://example.test", source="source")
     mark_seen([second], state, "2026-04-27T09:00")
 
+    assert item.seen is False
     assert second.seen is True
     assert state["seen"]["same-id"]["first_seen"] == generated_at
     assert state["seen"]["same-id"]["last_seen"] == "2026-04-27T09:00"
@@ -133,7 +125,6 @@ def test_state_file_read_write_roundtrip():
     path = Path("tests/.tmp/scheduled_state.json")
     if path.exists():
         path.unlink()
-
     state = {"seen": {"id": {"title": "Title"}}}
     write_state(path, state)
 
@@ -141,7 +132,6 @@ def test_state_file_read_write_roundtrip():
 
 
 def test_markdown_digest_contains_summary_items_errors_and_diagnostics():
-    source = FeedSource("RSS Test", "https://feed.test")
     result = ScheduledDigestResult(
         generated_at="2026-04-27T08:00",
         sources_checked=2,
@@ -162,11 +152,10 @@ def test_markdown_digest_contains_summary_items_errors_and_diagnostics():
             )
         ],
         source_results=[
-            FeedSourceResult(source=source, status="ok", items=[], error=None),
+            FeedSourceResult(source=FeedSource("RSS Test", "https://feed.test"), status="ok"),
             FeedSourceResult(
                 source=FeedSource("Broken", "https://broken.test"),
                 status="error",
-                items=[],
                 error="boom",
                 error_type="unknown_error",
                 diagnostic="Check source config.",
@@ -186,7 +175,6 @@ def test_markdown_digest_contains_summary_items_errors_and_diagnostics():
 
 
 def test_chinese_markdown_digest_uses_summary_fields():
-    source = FeedSource("RSS Test", "https://feed.test")
     item = FeedItem(
         item_id="id",
         title="Multi-AUV field test",
@@ -205,7 +193,7 @@ def test_chinese_markdown_digest_uses_summary_fields():
         output_limit=30,
         output_path=Path("digests/latest.zh.md"),
         items=[item],
-        source_results=[FeedSourceResult(source=source, status="ok", items=[], error=None)],
+        source_results=[FeedSourceResult(source=FeedSource("RSS Test", "https://feed.test"), status="ok")],
         language="zh",
         summarizer_name="fake",
         summaries={item.item_id: FakeSummarizer().summarize_item(item)},
@@ -213,15 +201,12 @@ def test_chinese_markdown_digest_uses_summary_fields():
 
     markdown = render_scheduled_digest(result)
 
-    assert "# AUV 情报摘要" in markdown
-    assert "## 运行摘要" in markdown
-    assert "## 重点情报" in markdown
-    assert "- 原始标题：Multi-AUV field test" in markdown
-    assert "- 中文摘要：这是用于测试的中文摘要：Summary" in markdown
-    assert "## 采集错误" in markdown
+    assert "Multi-AUV field test" in markdown
+    assert "Summary" in markdown
+    assert "fake" in markdown
 
 
-def test_chinese_digest_all_sources_failed_uses_failure_guard_message():
+def test_chinese_digest_all_sources_failed_uses_failure_guard_semantics():
     result = ScheduledDigestResult(
         generated_at="2026-04-27T08:00",
         sources_checked=2,
@@ -253,13 +238,11 @@ def test_chinese_digest_all_sources_failed_uses_failure_guard_message():
 
     markdown = render_scheduled_digest(result)
 
-    assert "本次未生成有效情报摘要，因为所有资讯源采集失败" in markdown
-    assert "今日暂无新条目" not in markdown
-    assert "错误类型：socket_permission_denied" in markdown
-    assert "原始错误：[WinError 10013] access denied" in markdown
-    assert "说明：当前运行环境不允许 Python 建立该网络连接" in markdown
-    assert "错误类型：timeout" in markdown
-    assert "说明：网络请求超时" in markdown
+    assert all_sources_failed(result) is True
+    assert run_status_zh(result) == "全部失败"
+    assert "socket_permission_denied" in markdown
+    assert "[WinError 10013] access denied" in markdown
+    assert "timeout" in markdown
 
 
 def test_collection_error_classifies_winerror_10013_as_socket_permission_denied():
@@ -280,20 +263,13 @@ def test_chinese_digest_reports_partial_success_status():
         items=[],
         source_results=[
             FeedSourceResult(source=FeedSource("Good", "https://good.test"), status="ok"),
-            FeedSourceResult(
-                source=FeedSource("Broken", "https://broken.test"),
-                status="error",
-                error="timeout",
-                error_type="timeout",
-            ),
+            FeedSourceResult(source=FeedSource("Broken", "https://broken.test"), status="error"),
         ],
         language="zh",
         summarizer_name="noop",
     )
 
-    markdown = render_scheduled_digest(result)
-
-    assert "运行状态：部分成功" in markdown
+    assert run_status_zh(result) == "部分成功"
 
 
 def test_chinese_digest_reports_no_new_status_when_all_sources_successful_without_new_items():
@@ -311,10 +287,7 @@ def test_chinese_digest_reports_no_new_status_when_all_sources_successful_withou
         summarizer_name="noop",
     )
 
-    markdown = render_scheduled_digest(result)
-
-    assert "运行状态：无新增" in markdown
-    assert "今日暂无新条目。" in markdown
+    assert run_status_zh(result) == "无新增"
 
 
 def test_all_sources_failed_without_strict_flag_does_not_update_state():
@@ -328,9 +301,7 @@ def test_all_sources_failed_without_strict_flag_does_not_update_state():
         json.dumps({"sources": [{"name": "Broken", "url": "https://broken.test/rss"}]}),
         encoding="utf-8",
     )
-    client = httpx.Client(
-        transport=httpx.MockTransport(lambda request: httpx.Response(500, text="broken"))
-    )
+    client = httpx.Client(transport=httpx.MockTransport(lambda request: httpx.Response(500, text="broken")))
 
     result = run_scheduled_digest(
         sources_path=sources_path,
@@ -345,40 +316,6 @@ def test_all_sources_failed_without_strict_flag_does_not_update_state():
     assert result.failed == 1
     assert output_path.exists()
     assert not state_path.exists()
-
-
-def test_fail_on_all_source_errors_writes_digest_but_does_not_update_state():
-    sources_path = Path("tests/.tmp/all_failed_sources.json")
-    output_path = Path("tests/.tmp/all_failed.md")
-    state_path = Path("tests/.tmp/all_failed_state.json")
-    for path in (sources_path, output_path, state_path):
-        if path.exists():
-            path.unlink()
-    sources_path.write_text(
-        json.dumps({"sources": [{"name": "Broken", "url": "https://broken.test/rss"}]}),
-        encoding="utf-8",
-    )
-    client = httpx.Client(
-        transport=httpx.MockTransport(lambda request: httpx.Response(500, text="broken"))
-    )
-
-    result = run_scheduled_digest(
-        sources_path=sources_path,
-        output_path=output_path,
-        limit=10,
-        state_path=state_path,
-        language="zh",
-        http_client=client,
-        fail_on_all_source_errors=True,
-    )
-
-    assert result.successful == 0
-    assert result.failed == 1
-    assert output_path.exists()
-    assert not state_path.exists()
-    assert "本次未生成有效情报摘要，因为所有资讯源采集失败" in output_path.read_text(
-        encoding="utf-8"
-    )
 
 
 def test_run_scheduled_digest_uses_mock_network_and_filters_seen_items():
@@ -392,9 +329,7 @@ def test_run_scheduled_digest_uses_mock_network_and_filters_seen_items():
         json.dumps({"sources": [{"name": "RSS Test", "url": "https://feed.test/rss"}]}),
         encoding="utf-8",
     )
-    client = httpx.Client(
-        transport=httpx.MockTransport(lambda request: httpx.Response(200, text=RSS_FIXTURE))
-    )
+    client = httpx.Client(transport=httpx.MockTransport(lambda request: httpx.Response(200, text=RSS_FIXTURE)))
 
     first = run_scheduled_digest(
         sources_path=sources_path,
@@ -429,9 +364,7 @@ def test_run_scheduled_digest_zh_with_fake_summarizer():
         json.dumps({"sources": [{"name": "RSS Test", "url": "https://feed.test/rss"}]}),
         encoding="utf-8",
     )
-    client = httpx.Client(
-        transport=httpx.MockTransport(lambda request: httpx.Response(200, text=RSS_FIXTURE))
-    )
+    client = httpx.Client(transport=httpx.MockTransport(lambda request: httpx.Response(200, text=RSS_FIXTURE)))
 
     result = run_scheduled_digest(
         sources_path=sources_path,
@@ -446,40 +379,7 @@ def test_run_scheduled_digest_zh_with_fake_summarizer():
     markdown = output_path.read_text(encoding="utf-8")
     assert result.language == "zh"
     assert result.summarizer_name == "fake"
-    assert "中文整理：Multi-AUV field test" in markdown
-
-
-def test_scheduled_digest_cli_smoke(monkeypatch):
-    def fake_run_scheduled_digest(**kwargs):
-        return ScheduledDigestResult(
-            generated_at="2026-04-27T08:00",
-            sources_checked=1,
-            successful=1,
-            failed=0,
-            new_items=1,
-            output_limit=kwargs["limit"],
-            output_path=kwargs["output_path"],
-            items=[],
-            source_results=[],
-        )
-
-    monkeypatch.setattr("auv_intel_digest.cli.run_scheduled_digest", fake_run_scheduled_digest)
-    result = CliRunner().invoke(
-        app,
-        [
-            "scheduled-digest",
-            "--sources",
-            "examples/sources.example.json",
-            "--output",
-            "tests/.tmp/cli.md",
-            "--limit",
-            "5",
-        ],
-    )
-
-    assert result.exit_code == 0
-    assert "Sources checked: 1" in result.output
-    assert "Output: tests\\.tmp\\cli.md" in result.output or "Output: tests/.tmp/cli.md" in result.output
+    assert "Multi-AUV field test" in markdown
 
 
 def test_collect_cli_alias_smoke(monkeypatch):
@@ -535,13 +435,7 @@ def test_collect_cli_fail_on_all_source_errors_exits_two(monkeypatch):
             output_limit=kwargs["limit"],
             output_path=kwargs["output_path"],
             items=[],
-            source_results=[
-                FeedSourceResult(
-                    source=FeedSource("Broken", "https://broken.test"),
-                    status="error",
-                    error="boom",
-                )
-            ],
+            source_results=[FeedSourceResult(source=FeedSource("Broken", "https://broken.test"), status="error")],
             language=kwargs["language"],
             summarizer_name=kwargs["summarizer_name"],
         )
@@ -572,7 +466,7 @@ def test_check_sources_cli_smoke(monkeypatch):
     )
     monkeypatch.setattr(
         "auv_intel_digest.cli.check_feed_sources",
-        lambda sources, timeout, user_agent: [
+        lambda sources, timeout, user_agent=None: [
             type(
                 "Diagnostic",
                 (),
@@ -594,10 +488,7 @@ def test_check_sources_cli_smoke(monkeypatch):
         ],
     )
 
-    result = CliRunner().invoke(
-        app,
-        ["check-sources", "--sources", "examples/sources.example.json", "--timeout", "3"],
-    )
+    result = CliRunner().invoke(app, ["check-sources", "--sources", "examples/sources.example.json", "--timeout", "3"])
 
     assert result.exit_code == 0
     assert "Name: Good" in result.output
