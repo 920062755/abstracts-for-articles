@@ -82,7 +82,7 @@ jobs:
             --sources examples/sources.example.json \
             --output digests/latest.zh.md \
             --limit 10 \
-            --state .auv_intel_digest/test-state.json \
+            --state .auv_intel_digest/test1-state.json \
             --language zh \
             --summarizer "${SUMMARIZER}" \
             --llm-model "${MODEL}" \
