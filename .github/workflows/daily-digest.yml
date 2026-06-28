@@ -1,5 +1,6 @@
 name: Daily AUV Intel Digest
-
+- name: Keep scheduled workflow activity
+  uses: WaterLemons2k/scheduled-workflow-activity-action@v2.0.2
 on:
   schedule:
     # GitHub cron uses UTC. 00:00 UTC is 08:00 Beijing time.
